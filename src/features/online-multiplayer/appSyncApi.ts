@@ -218,7 +218,7 @@ async function graphqlRequest<TData>(
 ): Promise<TData> {
   if (!isAppSyncConfigured()) {
     throw new OnlineApiError(
-      'AppSync API 주소가 아직 설정되지 않았습니다. .env.local에 VITE_APPSYNC_GRAPHQL_URL을 추가해 주세요.',
+      '현재 온라인 플레이를 이용할 수 없습니다.',
     )
   }
 
@@ -233,15 +233,13 @@ async function graphqlRequest<TData>(
   try {
     result = (await response.json()) as GraphqlResponse<TData>
   } catch {
-    throw new OnlineApiError(
-      `AppSync 응답을 읽지 못했습니다. HTTP ${response.status}`,
-    )
+    throw new OnlineApiError('온라인 요청 결과를 확인하지 못했습니다.')
   }
 
   if (!response.ok || result.errors?.length || !result.data) {
     throw new OnlineApiError(
       result.errors?.[0]?.message ??
-        `온라인 서버 요청에 실패했습니다. HTTP ${response.status}`,
+        '온라인 요청을 처리하지 못했습니다.',
     )
   }
 
@@ -376,7 +374,7 @@ export function subscribeToOnlineChat(
       })
 
       socket.addEventListener('error', () => {
-        onError('실시간 채팅 서버에 연결하지 못했습니다.')
+        onError('채팅에 연결하지 못했습니다.')
       })
     } catch (error) {
       if (!stopped) {

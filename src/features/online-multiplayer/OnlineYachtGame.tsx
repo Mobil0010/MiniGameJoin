@@ -351,7 +351,7 @@ function OnlineYachtGame({
       : !isMyTurn
         ? `${activePlayer?.nickname ?? '상대방'}의 차례입니다.`
         : isSubmitting
-          ? '서버에서 게임 상태를 처리하고 있습니다...'
+          ? '처리 중입니다...'
           : (room.rollCount ?? 0) === 0
             ? '주사위를 굴려 턴을 시작하세요.'
             : (room.rollCount ?? 0) < MAX_ROLL_COUNT
@@ -410,13 +410,6 @@ function OnlineYachtGame({
             </div>
           ) : (
             <>
-              <div className="online-connection-status">
-                <span aria-hidden="true" />
-                <strong>서버 연결됨</strong>
-                <small>
-                  갑작스러운 연결 종료 판정은 서버 감지 기능 연결 예정
-                </small>
-              </div>
               <div className="panel-title play-panel-title">
                 <div>
                   <span>{activePlayer?.slot ?? '-'}P TURN</span>

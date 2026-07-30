@@ -131,7 +131,7 @@ export function getCognitoErrorMessage(error: unknown): string {
     case 'ExpiredCodeException':
       return '인증 코드가 만료되었습니다. 새 코드를 받아주세요.'
     case 'InvalidPasswordException':
-      return '비밀번호가 Cognito의 비밀번호 규칙을 충족하지 않습니다.'
+      return '비밀번호 규칙을 충족하지 않습니다.'
     case 'LimitExceededException':
       return '요청 횟수가 너무 많습니다. 잠시 후 다시 시도해주세요.'
     case 'TooManyFailedAttemptsException':
@@ -145,7 +145,7 @@ export function getCognitoErrorMessage(error: unknown): string {
         errorShape.message?.includes('SECRET_HASH') ||
         errorShape.message?.includes('configured with secret')
       ) {
-        return 'Cognito 앱 클라이언트에 보안 암호가 설정되어 있습니다. 브라우저용 앱 클라이언트는 Client secret 없이 만들어야 합니다.'
+        return '현재 로그인 기능을 이용할 수 없습니다. 잠시 후 다시 시도해주세요.'
       }
 
       return errorShape.message || '인증 처리 중 오류가 발생했습니다.'
@@ -178,7 +178,7 @@ export function signUpMember({
         }
 
         if (!result) {
-          reject(new Error('Cognito 회원가입 결과를 받지 못했습니다.'))
+          reject(new Error('회원가입 결과를 확인하지 못했습니다.'))
           return
         }
 

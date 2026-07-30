@@ -93,7 +93,7 @@ function YachtOnlinePage() {
       if (!guestOnlineConfigured) {
         setUser(storedUser)
         setNotice(
-          '게스트 온라인 플레이용 Cognito Identity Pool이 아직 연결되지 않았습니다.',
+          '현재 게스트 온라인 플레이를 이용할 수 없습니다.',
         )
         setIsRestoringSession(false)
         return () => {
@@ -354,7 +354,7 @@ function YachtOnlinePage() {
     try {
       if (!guestOnlineConfigured) {
         throw new Error(
-          '게스트 온라인 플레이용 Cognito Identity Pool이 아직 연결되지 않았습니다.',
+          '현재 게스트 온라인 플레이를 이용할 수 없습니다.',
         )
       }
 
@@ -694,11 +694,6 @@ function YachtOnlinePage() {
             <span className="prototype-badge">온라인 테스트 단계</span>
           </section>
 
-          <div className="online-notice">
-            {appSyncConfigured
-              ? '회원 프로필과 게임방이 AWS AppSync 서버에 연결됩니다. 현재 다른 플레이어의 상태는 2.5초 간격으로 확인합니다.'
-              : '회원가입과 로그인은 Cognito에 연결되었습니다. AppSync API 주소를 설정하면 실제 온라인 게임방 기능이 활성화됩니다.'}
-          </div>
         </>
       )}
 
@@ -709,14 +704,8 @@ function YachtOnlinePage() {
             <h2 id="online-entry-title">온라인 플레이 입장</h2>
             <p>
               회원은 이메일 인증 후 안전하게 로그인하고, 게스트는 가입 없이
-              현재 브라우저에서 바로 로비를 둘러볼 수 있습니다.
+              바로 온라인 플레이를 시작할 수 있습니다.
             </p>
-            <ul>
-              <li>회원: Cognito 계정으로 회원가입 및 로그인</li>
-              <li>게스트: 임시 사용자 ID로 접속</li>
-              <li>로그아웃하기 전까지 로그인 세션 유지</li>
-              <li>비밀번호는 앱이나 브라우저 저장소에 직접 저장하지 않음</li>
-            </ul>
           </div>
 
           <div className="auth-panel">

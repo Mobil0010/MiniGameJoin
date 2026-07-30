@@ -153,16 +153,6 @@
   font-weight: 800;
 }
 
-.online-notice {
-  margin-bottom: 20px;
-  padding: 13px 16px;
-  color: #72510d;
-  background: #fff8df;
-  border: 1px solid #f0dda1;
-  border-radius: 13px;
-  font-size: 13px;
-}
-
 .auth-shell {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(380px, 1.1fr);
@@ -196,17 +186,6 @@
 .auth-copy p {
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.78);
-}
-
-.auth-copy ul {
-  margin: 28px 0 0;
-  padding-left: 20px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 13px;
-}
-
-.auth-copy li + li {
-  margin-top: 8px;
 }
 
 .auth-panel {
@@ -1170,31 +1149,6 @@
 .chat-compose button:disabled {
   cursor: wait;
   opacity: 0.55;
-}
-
-.online-connection-status {
-  margin-bottom: 16px;
-  padding: 9px 11px;
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: center;
-  gap: 7px;
-  color: #24754a;
-  background: #eaf8f0;
-  border-radius: 11px;
-  font-size: 11px;
-}
-
-.online-connection-status > span {
-  width: 8px;
-  height: 8px;
-  background: #2dad68;
-  border-radius: 50%;
-}
-
-.online-connection-status small {
-  color: #4f7962;
-  text-align: right;
 }
 
 .online-game-actions {
@@ -2518,15 +2472,6 @@
 
   .online-chat-panel {
     height: 320px;
-  }
-
-  .online-connection-status {
-    grid-template-columns: auto 1fr;
-  }
-
-  .online-connection-status small {
-    grid-column: 1 / -1;
-    text-align: left;
   }
 
   .account-modal {

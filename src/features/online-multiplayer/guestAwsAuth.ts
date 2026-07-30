@@ -43,7 +43,7 @@ function assertGuestAuthConfigured(): void {
     !/^arn:aws:iam::\d{12}:role\/[\w+=,.@/-]+$/.test(guestRoleArn)
   ) {
     throw new Error(
-      '게스트 온라인 플레이용 Identity Pool 또는 IAM 역할이 아직 연결되지 않았습니다.',
+      '현재 게스트 온라인 플레이를 이용할 수 없습니다.',
     )
   }
 }
@@ -87,7 +87,7 @@ function normalizeCredentials(
     !credentials.SessionToken ||
     !credentials.Expiration
   ) {
-    throw new Error('게스트용 임시 AWS 자격 증명을 발급받지 못했습니다.')
+    throw new Error('게스트 접속 정보를 불러오지 못했습니다.')
   }
 
   return {
@@ -122,7 +122,7 @@ async function requestCredentials(
   )
 
   if (!tokenResult.Token) {
-    throw new Error('게스트용 Cognito 토큰을 발급받지 못했습니다.')
+    throw new Error('게스트 접속 정보를 불러오지 못했습니다.')
   }
 
   const identityUuid = identityId.split(':').at(-1) ?? crypto.randomUUID()

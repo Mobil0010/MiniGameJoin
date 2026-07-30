@@ -26,8 +26,8 @@ function AccountDeletionDialog({
         <span>DELETE ACCOUNT</span>
         <h2 id="account-delete-title">정말 회원탈퇴하시겠습니까?</h2>
         <p id="account-delete-description">
-          탈퇴하면 계정과 저장된 전적을 더 이상 이용할 수 없습니다. 실제
-          서버 연결 후에는 이 작업을 되돌릴 수 없습니다.
+          탈퇴하면 계정과 저장된 전적을 더 이상 이용할 수 없으며, 이 작업은
+          되돌릴 수 없습니다.
         </p>
 
         <label>
