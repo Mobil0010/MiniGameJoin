@@ -1,32 +1,865 @@
-# React + TypeScript + Vite
+<div align="center">
+  <img src="./public/favicon.svg" alt="MiniGameJoin logo" width="92" height="92" />
+  <h1>MiniGameJoin</h1>
+  <p>
+    설치 없이 브라우저에서 바로 즐기는 미니게임 플랫폼.<br />
+    현재 Yacht Dice의 로컬 2인 플레이와 AWS 기반 온라인 2인 플레이를 제공합니다.
+  </p>
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+  <p>
+    <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111827" />
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white" />
+    <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" />
+    <img alt="AWS" src="https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonwebservices&logoColor=white" />
+    <img alt="Cloudflare Pages" src="https://img.shields.io/badge/Cloudflare-Pages-F38020?logo=cloudflare&logoColor=white" />
+  </p>
+</div>
 
-Currently, two official plugins are available:
+> **프로젝트 상태:** 온라인 테스트 단계
+>
+> Yacht Dice의 핵심 게임, 회원/게스트 인증, 온라인 방, 채팅, 전적 및 기권 처리를 실제 AWS 환경에 연결해 검증하고 있습니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 목차
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- [프로젝트 소개](#프로젝트-소개)
+- [현재 제공 기능](#현재-제공-기능)
+- [Yacht Dice 규칙](#yacht-dice-규칙)
+- [전체 아키텍처](#전체-아키텍처)
+- [기술 스택](#기술-스택)
+- [프론트엔드 설계](#프론트엔드-설계)
+- [백엔드 설계](#백엔드-설계)
+- [인증과 권한](#인증과-권한)
+- [온라인 게임 동기화](#온라인-게임-동기화)
+- [데이터 모델](#데이터-모델)
+- [GraphQL API](#graphql-api)
+- [보안 설계](#보안-설계)
+- [프로젝트 구조](#프로젝트-구조)
+- [로컬 개발 환경 설정](#로컬-개발-환경-설정)
+- [테스트와 품질 검사](#테스트와-품질-검사)
+- [AWS 백엔드 배포](#aws-백엔드-배포)
+- [Cloudflare Pages 배포](#cloudflare-pages-배포)
+- [문제 해결](#문제-해결)
+- [로드맵](#로드맵)
 
-## Expanding the Oxlint configuration
+## 프로젝트 소개
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 로컬 또는 온라인으로 즐길 수 있도록 만드는 프로젝트입니다.
 
-```json
+현재 첫 번째 게임으로 **Yacht Dice**를 구현했습니다. 한 화면에서 두 명이 번갈아 플레이하는 로컬 모드와, 서로 다른 브라우저에서 초대 코드로 같은 방에 접속하는 온라인 모드를 모두 지원합니다.
+
+프로젝트의 주요 목표는 다음과 같습니다.
+
+- 별도의 프로그램 설치 없이 웹 브라우저에서 즉시 플레이
+- 데스크톱과 모바일 화면에 대응하는 반응형 UI
+- 로컬 2인 플레이와 온라인 2인 플레이를 동일한 게임 규칙으로 제공
+- 회원뿐 아니라 가입하지 않은 게스트도 온라인 플레이 가능
+- 주사위 결과와 점수 계산을 서버에서 검증하는 안전한 온라인 게임
+- 새로운 미니게임을 독립된 기능 단위로 추가할 수 있는 구조
+
+## 현재 제공 기능
+
+### 공통
+
+- 홈 화면과 게임 선택 화면
+- 반응형 웹 레이아웃
+- MiniGameJoin 전용 파비콘
+- Yacht Dice 전체 규칙 가이드
+- 최초 접속자용 게임 안내 모달
+- 안내를 다시 보지 않도록 브라우저에 선택 저장
+- Yacht 달성 시 3초 동안 축하 오버레이 표시
+- 주사위 굴림 2D 애니메이션
+- 확정 점수와 선택 가능한 점수를 시각적으로 구분
+
+### Yacht Dice 로컬 모드
+
+- 한 화면에서 2인 플레이
+- 1P와 2P가 번갈아 턴 진행
+- 양쪽 점수판과 중앙 주사위 배치
+- 플레이어 닉네임 입력
+- 최대 3회 굴림과 주사위 보관
+- 12개 점수 항목 선택
+- 상단 숫자 점수 63점 이상 달성 시 30점 보너스
+- 전체 점수 자동 계산
+- 모든 점수 항목 확정 후 승자 판정
+
+### Yacht Dice 온라인 모드
+
+- Cognito 회원가입, 이메일 인증 코드 확인, 로그인
+- 로그인 세션 복구 및 명시적 로그아웃
+- 비밀번호 찾기와 재설정
+- 회원 닉네임과 이메일 변경
+- 회원탈퇴
+- 회원 승리, 패배, 승률 표시
+- 전적 목록과 경기 상세 조회
+- Cognito Identity Pool 기반 게스트 접속
+- 회원과 게스트 모두 방 생성 및 참가
+- 6자리 초대 코드
+- 방장, 참가자, 준비 상태 표시
+- 회원/게스트 방장의 게임 시작
+- 서버에서 주사위 생성 및 점수 검증
+- 온라인 게임 채팅
+- 뒤로가기 및 나가기 시 기권 확인
+- 새로고침, 탭 닫기, 창 닫기 상황의 기권 처리 준비
+- heartbeat 기반 접속 상태 갱신
+- 연결 종료 유예시간 이후 승패 처리
+- 게스트가 포함된 경기는 회원 전적에서 제외
+
+## Yacht Dice 규칙
+
+한 플레이어는 자신의 턴에 다섯 개의 주사위를 최대 세 번까지 굴릴 수 있습니다.
+
+첫 번째 굴림 이후 원하는 주사위를 보관하고 나머지만 다시 굴릴 수 있습니다. 세 번을 모두 굴리기 전이라도 원하는 점수 항목을 선택해 턴을 끝낼 수 있습니다.
+
+한 번 확정한 점수 항목은 다시 사용할 수 없습니다. 조건을 만족하지 못한 항목도 0점으로 확정할 수 있습니다.
+
+### 숫자 점수
+
+| 항목 | 계산 방식 |
+|---|---|
+| Ones | 숫자 1인 주사위의 합 |
+| Twos | 숫자 2인 주사위의 합 |
+| Threes | 숫자 3인 주사위의 합 |
+| Fours | 숫자 4인 주사위의 합 |
+| Fives | 숫자 5인 주사위의 합 |
+| Sixes | 숫자 6인 주사위의 합 |
+
+숫자 점수의 합이 **63점 이상**이면 **30점 보너스**를 받습니다.
+
+### 조합 점수
+
+| 항목 | 조건 | 점수 |
+|---|---|---:|
+| Choice | 조건 없음 | 주사위 5개의 합 |
+| Four of a Kind | 같은 숫자가 4개 이상 | 주사위 5개의 합 |
+| Full House | 같은 숫자 3개와 다른 같은 숫자 2개 | 주사위 5개의 합 |
+| Small Straight | 연속된 숫자 4개 이상 | 15점 |
+| Large Straight | 연속된 숫자 5개 | 30점 |
+| Yacht | 주사위 5개가 모두 같은 숫자 | 50점 |
+
+두 플레이어가 12개 항목을 모두 확정하면 숫자 점수, 보너스, 조합 점수를 합산해 승자를 결정합니다.
+
+## 전체 아키텍처
+
+```mermaid
+flowchart LR
+    Browser["React 웹 클라이언트"] --> Pages["Cloudflare Pages"]
+    Browser --> UserPool["Amazon Cognito User Pool"]
+    Browser --> IdentityPool["Amazon Cognito Identity Pool"]
+    IdentityPool --> STS["AWS STS 임시 자격 증명"]
+    Browser --> AppSync["AWS AppSync GraphQL API"]
+    UserPool --> AppSync
+    STS --> AppSync
+    AppSync --> Lambda["AWS Lambda 게임 API"]
+    Lambda --> Users["DynamoDB Users"]
+    Lambda --> Rooms["DynamoDB Rooms"]
+    Lambda --> Matches["DynamoDB Matches"]
+    Lambda --> PlayerMatches["DynamoDB PlayerMatches"]
+    Lambda --> Chat["DynamoDB ChatMessages"]
+    Scheduler["EventBridge 주기 실행"] --> Lambda
+```
+
+### 요청 흐름
+
+1. Cloudflare Pages가 React 정적 파일을 전 세계 CDN에서 제공합니다.
+2. 회원은 Cognito User Pool에서 로그인하고 ID 토큰을 발급받습니다.
+3. 게스트는 Cognito Identity Pool과 STS를 통해 제한된 IAM 임시 자격 증명을 발급받습니다.
+4. 회원 요청은 Cognito 토큰으로, 게스트 요청은 AWS Signature Version 4로 AppSync를 호출합니다.
+5. AppSync Resolver가 요청 필드명, 인자, 사용자 identity를 Lambda에 전달합니다.
+6. Lambda가 참가자 권한, 턴, 방 버전, 점수 조건을 검증합니다.
+7. 검증된 결과만 DynamoDB에 저장되고 GraphQL 응답으로 반환됩니다.
+
+## 기술 스택
+
+### 프론트엔드
+
+| 기술 | 역할 |
+|---|---|
+| React 19 | 화면과 컴포넌트 상태 관리 |
+| TypeScript 6 | 게임 상태, API DTO, 사용자/방 모델의 정적 타입 검사 |
+| React Router 8 | 홈, 모드 선택, 로컬 게임, 온라인 로비 라우팅 |
+| Vite 8 | 개발 서버, HMR, TypeScript 기반 프로덕션 번들 |
+| CSS | 반응형 레이아웃, 게임판, 애니메이션, 모달 스타일 |
+| Vitest | 점수 계산, 게임 상태, 방 코드 입력 유틸리티 테스트 |
+| Oxlint | React 및 TypeScript 정적 코드 검사 |
+
+### 인증 및 AWS 클라이언트
+
+| 기술 | 역할 |
+|---|---|
+| amazon-cognito-identity-js | 회원가입, 인증 코드 확인, 로그인, 세션 복구, 비밀번호 재설정 |
+| AWS SDK for JavaScript v3 | Cognito Identity와 STS 임시 자격 증명 발급 |
+| `@smithy/signature-v4` | 게스트 AppSync HTTP 요청의 SigV4 서명 |
+| `@aws-crypto/sha256-browser` | SigV4 서명과 게스트 공개 ID 해시 |
+
+### 백엔드
+
+| 기술 | 역할 |
+|---|---|
+| AWS AppSync | GraphQL API, Cognito/IAM 다중 인증, Subscription |
+| AWS Lambda | 게임 규칙, 권한, 점수, 방 상태, 승패 처리 |
+| Amazon DynamoDB | 회원, 방, 경기, 사용자별 전적, 채팅 데이터 |
+| Amazon Cognito User Pool | 회원 계정과 이메일 인증 |
+| Amazon Cognito Identity Pool | 비로그인 게스트의 AWS identity |
+| AWS STS | 게스트용 단기 IAM 자격 증명 |
+| Amazon EventBridge | 접속 종료 상태를 주기적으로 검사하는 Lambda 트리거 |
+
+### 호스팅과 배포
+
+| 기술 | 역할 |
+|---|---|
+| GitHub | 소스 코드와 배포 브랜치 관리 |
+| Cloudflare Pages | 프론트엔드 빌드, CDN 배포, Git push 자동 배포 |
+| PowerShell | Lambda 배포 ZIP 생성 자동화 |
+
+## 프론트엔드 설계
+
+### 페이지 라우팅
+
+| 경로 | 페이지 |
+|---|---|
+| `/` | 미니게임 홈 |
+| `/yacht-dice` | 로컬/온라인 플레이 방식 선택 |
+| `/yacht-dice/local` | 한 화면 2인 Yacht Dice |
+| `/yacht-dice/online` | 회원/게스트 로그인, 로비, 온라인 게임 |
+
+Cloudflare Pages는 최상위 `404.html`이 없는 React SPA를 루트 `index.html`로 연결하므로 각 경로를 직접 새로고침해도 React Router가 화면을 복원합니다.
+
+### 게임 로직 분리
+
+Yacht Dice의 규칙 코드는 화면 컴포넌트와 분리되어 있습니다.
+
+- `calculateScore.ts`: 점수 항목별 계산과 합계/보너스 계산
+- `rollDice.ts`: 로컬 주사위 생성 및 보관된 주사위 처리
+- `gameState.ts`: 턴 전환, 점수 확정, 게임 종료 상태
+- `useYachtGame.ts`: 로컬 게임 UI에서 사용하는 상태 훅
+- `constants.ts`: 굴림 횟수, 점수 항목, 보너스 기준
+- `types/yacht.ts`: 주사위, 플레이어, 점수판, 게임 상태 타입
+
+온라인 모드에서도 UI 미리보기 점수는 동일한 계산 함수를 사용하지만, 최종 결과는 Lambda가 다시 계산해 저장합니다.
+
+### 온라인 기능 구성
+
+- `cognitoAuth.ts`: 회원 인증과 계정 작업
+- `guestAwsAuth.ts`: 게스트 identity, STS, SigV4 처리
+- `appSyncApi.ts`: GraphQL 요청, DTO 변환, 채팅 Subscription
+- `YachtOnlinePage.tsx`: 로그인, 로비, 방 준비와 시작
+- `OnlineYachtGame.tsx`: 온라인 턴과 기권/접속 상태
+- `OnlineChatPanel.tsx`: 채팅 내역과 입력 UI
+- `MatchHistoryDialog.tsx`: 전적 목록과 상세 점수
+- `MemberProfileDialog.tsx`: 닉네임과 이메일 변경
+
+## 백엔드 설계
+
+AppSync의 각 Query와 Mutation은 공통 Lambda 데이터 소스에 연결됩니다.
+
+Resolver는 다음 payload를 Lambda에 전달합니다.
+
+```js
 {
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  fieldName: ctx.info.fieldName,
+  arguments: ctx.args,
+  identity: ctx.identity
 }
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Lambda는 `fieldName`을 기준으로 핸들러를 선택합니다. 인증 방식이 달라도 동일한 방/게임 규칙 코드를 사용합니다.
+
+### 서버 권위형 처리
+
+온라인 게임에서는 클라이언트가 최종 주사위 값이나 점수를 임의로 제출하지 않습니다.
+
+- 클라이언트는 보관할 주사위 인덱스만 전송
+- Lambda가 암호학적 난수를 사용해 새 주사위 값을 생성
+- 클라이언트는 확정할 점수 카테고리만 전송
+- Lambda가 현재 주사위와 카테고리로 점수를 재계산
+- 현재 플레이어가 아닌 사용자의 굴림/점수 요청은 거부
+- 세 번을 초과하는 굴림 요청은 거부
+- 이미 기록한 점수 카테고리의 재사용은 거부
+
+따라서 브라우저 상태를 직접 수정해도 서버에 저장되는 게임 결과를 바꿀 수 없도록 설계했습니다.
+
+## 인증과 권한
+
+### 회원 인증
+
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant B as 브라우저
+    participant C as Cognito User Pool
+    participant A as AppSync
+    participant L as Lambda
+
+    U->>B: 이메일/비밀번호 입력
+    B->>C: 로그인 요청
+    C-->>B: ID 토큰
+    B->>A: Authorization 헤더로 GraphQL 요청
+    A->>L: Cognito identity와 요청 전달
+    L-->>B: 회원 프로필 또는 게임 결과
+```
+
+회원 ID는 클라이언트 입력값이 아니라 AppSync가 검증한 `identity.sub`에서 가져옵니다.
+
+회원에게만 허용되는 기능:
+
+- 프로필 생성과 조회
+- 닉네임/이메일 변경
+- 회원탈퇴
+- 승리/패배/승률 저장
+- 전적 목록과 상세 조회
+
+### 게스트 인증
+
+```mermaid
+sequenceDiagram
+    participant B as 브라우저
+    participant I as Cognito Identity Pool
+    participant S as AWS STS
+    participant A as AppSync
+    participant L as Lambda
+
+    B->>I: 비인증 Identity ID 요청
+    I-->>B: Cognito Identity ID
+    B->>I: OpenID 토큰 요청
+    I-->>B: Web Identity 토큰
+    B->>S: AssumeRoleWithWebIdentity
+    S-->>B: 단기 IAM 자격 증명
+    B->>A: SigV4 서명 GraphQL 요청
+    A->>L: 검증된 IAM identity 전달
+    L-->>B: 게임방 또는 게임 결과
+```
+
+게스트 ID는 Cognito Identity ID 원문을 그대로 공개하지 않고 SHA-256으로 해시한 값을 게임 사용자 ID로 사용합니다.
+
+게스트 IAM 역할에는 MiniGameJoin AppSync API의 필요한 Query/Mutation 필드만 허용합니다. 회원 프로필과 전적 API에는 접근할 수 없습니다.
+
+## 온라인 게임 동기화
+
+### 방 상태
+
+방에는 다음 핵심 상태가 저장됩니다.
+
+```ts
+type RoomStatus =
+  | 'waiting'
+  | 'ready'
+  | 'playing'
+  | 'finished'
+  | 'cancelled'
+```
+
+- `waiting`: 플레이어를 기다리거나 준비가 완료되지 않은 상태
+- `ready`: 두 플레이어가 모두 준비한 상태
+- `playing`: 게임 진행 중
+- `finished`: 정상 종료, 기권 또는 연결 종료로 승패가 확정된 상태
+- `cancelled`: 방이 취소되거나 양쪽 모두 이탈한 상태
+
+### 낙관적 동시성 제어
+
+각 방에는 증가하는 `version` 값이 있습니다.
+
+상태 변경 Mutation은 클라이언트가 마지막으로 확인한 `expectedVersion`을 전송합니다. Lambda는 DynamoDB ConditionExpression으로 저장된 버전과 비교합니다.
+
+```text
+클라이언트 expectedVersion == DynamoDB room.version
+```
+
+두 사용자가 동시에 요청하거나 오래된 화면에서 중복 요청하면 먼저 성공한 요청만 버전을 증가시키며, 나머지 요청은 최신 상태를 다시 불러오도록 실패합니다.
+
+이 방식으로 다음 문제를 줄입니다.
+
+- 주사위 굴림 버튼 연속 클릭
+- 동시에 같은 점수 항목 확정
+- 준비 상태와 게임 시작 요청 충돌
+- 기권과 정상 게임 종료의 중복 기록
+- 네트워크 재시도로 동일 승패가 두 번 저장되는 문제
+
+### 상태 갱신
+
+- 로비와 방 상태는 2.5초 간격으로 최신 상태 확인
+- 회원 채팅은 AppSync GraphQL Subscription을 통한 WebSocket 수신
+- 게스트 채팅은 IAM WebSocket 제약을 단순화하기 위해 2.5초 폴링
+- 진행 중 게임은 15초마다 heartbeat 전송
+- 마지막 heartbeat 이후 90초가 지난 플레이어는 연결 종료 후보
+- EventBridge가 Lambda 접속 상태 검사를 주기적으로 호출
+
+### 나가기와 기권
+
+- 게임 중 `게임 나가기` 선택 시 기권 확인 모달 표시
+- 브라우저 뒤로가기 이벤트를 가로채 기권 여부 확인
+- 새로고침/탭 닫기 전에 브라우저 기본 이탈 경고 표시
+- 사용자가 이탈하면 준비해 둔 서명 요청을 `keepalive` 옵션으로 전송
+- 강제 종료 등 요청을 보낼 수 없는 상황은 heartbeat 만료 후 서버가 처리
+
+## 데이터 모델
+
+### `MiniGameJoinUsers`
+
+| 키/필드 | 설명 |
+|---|---|
+| `userId` | Cognito User Pool의 `sub` |
+| `email` | 인증된 회원 이메일 |
+| `nickname` | 게임 표시 이름 |
+| `wins` | 승리 횟수 |
+| `losses` | 패배 횟수 |
+| `createdAt` / `updatedAt` | 프로필 생성/수정 시각 |
+
+### `MiniGameJoinRooms`
+
+| 키/필드 | 설명 |
+|---|---|
+| `roomCode` | 6자리 방 초대 코드, Partition Key |
+| `status` | 대기/준비/진행/종료/취소 상태 |
+| `players` | 두 플레이어의 ID, 닉네임, 방장/준비 상태, 점수 |
+| `activePlayerId` | 현재 차례 플레이어 |
+| `dice` | 서버에서 생성한 주사위 값과 보관 상태 |
+| `rollCount` | 현재 턴의 굴림 횟수 |
+| `version` | 낙관적 동시성 제어 버전 |
+| `lastSeenAt` | 플레이어별 heartbeat 시각 |
+| `expiresAt` | DynamoDB TTL |
+
+진행/대기 방은 24시간, 취소된 방은 1시간 후 정리되도록 TTL 값을 저장합니다.
+
+### `MiniGameJoinMatches`
+
+경기 종료 시점의 승자, 종료 이유, 플레이어별 최종 점수와 전체 점수표를 저장합니다.
+
+### `MiniGameJoinPlayerMatches`
+
+회원별 전적 목록을 시간순으로 조회하기 위한 테이블입니다.
+
+- Partition Key: `userId`
+- Sort Key: `matchKey`
+- `matchKey`는 종료 시각과 경기 ID의 조합
+
+### `MiniGameJoinChatMessages`
+
+- Partition Key: `roomCode`
+- Sort Key: `messageKey`
+- 메시지 길이: 1~200자
+- 기본 조회: 최근 50개
+- 보관 기간: 7일 TTL
+
+## GraphQL API
+
+### Query
+
+| 필드 | 인증 | 설명 |
+|---|---|---|
+| `me` | 회원 | 내 프로필과 승패 조회 |
+| `room` | 회원/게스트 | 참가 중인 방 조회 |
+| `listChatMessages` | 회원/게스트 | 참가 방 채팅 조회 |
+| `myMatchHistory` | 회원 | 내 전적 페이지 조회 |
+| `matchDetail` | 회원 | 경기별 전체 점수표 조회 |
+
+### Mutation
+
+| 필드 | 인증 | 설명 |
+|---|---|---|
+| `ensureProfile` | 회원 | 최초 로그인 프로필 생성 |
+| `updateNickname` | 회원 | 닉네임 변경 |
+| `deleteMyProfile` | 회원 | 프로필과 회원 전적 삭제 |
+| `createRoom` | 회원/게스트 | 새 게임방 생성 |
+| `joinRoom` | 회원/게스트 | 초대 코드로 참가 |
+| `leaveRoom` | 회원/게스트 | 대기방 나가기 |
+| `setReady` | 회원/게스트 | 준비 상태 변경 |
+| `startGame` | 회원/게스트 | 방장이 게임 시작 |
+| `rollDice` | 회원/게스트 | 서버 주사위 굴림 |
+| `confirmScore` | 회원/게스트 | 서버 점수 확정 |
+| `forfeit` | 회원/게스트 | 기권 처리 |
+| `heartbeat` | 회원/게스트 | 접속 상태 갱신 |
+| `claimDisconnectWin` | 회원/게스트 | 연결 종료 승리 확인 |
+| `sendChatMessage` | 회원/게스트 | 채팅 전송 |
+
+### Subscription
+
+| 필드 | 설명 |
+|---|---|
+| `onRoomChanged` | 방 참가, 준비, 시작, 굴림, 점수, 기권 상태 변경 |
+| `onChatMessage` | 새 채팅 메시지 |
+
+## 보안 설계
+
+- 비밀번호를 애플리케이션 데이터베이스나 브라우저 저장소에 직접 저장하지 않습니다.
+- Cognito가 비밀번호 해시와 인증 흐름을 관리합니다.
+- 브라우저에는 장기 AWS Access Key/Secret Key를 넣지 않습니다.
+- 게스트는 STS가 발급한 만료 시간이 있는 임시 자격 증명만 사용합니다.
+- 게스트 역할은 AppSync의 허용된 GraphQL 필드로 제한합니다.
+- Lambda는 AppSync가 검증한 `identity`만 신뢰합니다.
+- 방 참가자가 아니면 방 조회, 채팅, 게임 Mutation을 실행할 수 없습니다.
+- 닉네임, 채팅 길이, 조회 개수, 방 코드 형식을 서버에서 검증합니다.
+- 온라인 주사위와 점수는 Lambda에서 생성/계산합니다.
+- DynamoDB 조건부 쓰기로 오래된 버전과 중복 결과 기록을 차단합니다.
+- 경기 결과와 회원 승패는 DynamoDB Transaction으로 함께 기록합니다.
+- 게스트 포함 경기는 회원 전적 어뷰징을 막기 위해 전적에 반영하지 않습니다.
+- 채팅과 방에는 TTL을 사용해 오래된 임시 데이터를 자동 정리합니다.
+
+## 프로젝트 구조
+
+```text
+MiniGameJoin/
+├─ public/
+│  ├─ favicon.svg
+│  └─ icons.svg
+├─ src/
+│  ├─ features/
+│  │  ├─ auth/
+│  │  │  └─ cognitoAuth.ts
+│  │  └─ online-multiplayer/
+│  │     ├─ appSyncApi.ts
+│  │     ├─ guestAwsAuth.ts
+│  │     ├─ OnlineYachtGame.tsx
+│  │     ├─ OnlineChatPanel.tsx
+│  │     ├─ MatchHistoryDialog.tsx
+│  │     └─ types.ts
+│  ├─ games/
+│  │  └─ yacht-dice/
+│  │     ├─ components/
+│  │     ├─ hooks/
+│  │     ├─ logic/
+│  │     ├─ types/
+│  │     ├─ constants.ts
+│  │     └─ YachtDiceGame.tsx
+│  ├─ pages/
+│  │  ├─ HomePage.tsx
+│  │  ├─ YachtModePage.tsx
+│  │  ├─ YachtDicePage.tsx
+│  │  └─ YachtOnlinePage.tsx
+│  ├─ App.tsx
+│  ├─ App.css
+│  └─ main.tsx
+├─ backend/
+│  ├─ appsync/
+│  │  ├─ schema.graphql
+│  │  ├─ resolvers/
+│  │  ├─ SETUP.md
+│  │  └─ GUEST_SETUP.md
+│  ├─ iam/
+│  │  └─ lambda-dynamodb-policy.json
+│  ├─ lambda/
+│  │  └─ game-api/
+│  │     └─ src/
+│  │        ├─ index.mjs
+│  │        └─ game.mjs
+│  └─ scripts/
+│     └─ build-lambda.ps1
+├─ .env.example
+├─ package.json
+├─ vite.config.ts
+└─ README.md
+```
+
+## 로컬 개발 환경 설정
+
+### 요구 사항
+
+- Node.js `22.22.0` 이상
+- npm 10 이상
+- Git
+- Visual Studio Code 권장
+
+React Router 8.3은 Node.js `22.22.0` 이상을 요구합니다.
+
+### 저장소 내려받기
+
+```bash
+git clone https://github.com/Mobil0010/MiniGameJoin.git
+cd MiniGameJoin
+npm install
+```
+
+### 환경 변수
+
+루트의 `.env.example`을 복사해 `.env.local`을 만듭니다.
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+`.env.local`:
+
+```dotenv
+VITE_AWS_REGION=ap-northeast-2
+VITE_COGNITO_USER_POOL_ID=YOUR_USER_POOL_ID
+VITE_COGNITO_APP_CLIENT_ID=YOUR_APP_CLIENT_ID
+VITE_COGNITO_IDENTITY_POOL_ID=YOUR_IDENTITY_POOL_ID
+VITE_COGNITO_GUEST_ROLE_ARN=YOUR_GUEST_ROLE_ARN
+VITE_APPSYNC_GRAPHQL_URL=https://YOUR_GRAPHQL_ENDPOINT/graphql
+```
+
+`VITE_` 접두사가 붙은 값은 Vite 빌드 결과에 포함될 수 있습니다. AWS Secret Access Key, 회원 비밀번호, 장기 토큰과 같은 비밀값은 절대 넣지 마세요.
+
+`.env.local`은 `.gitignore`의 `*.local` 규칙으로 Git에 포함되지 않습니다.
+
+### 개발 서버 실행
+
+```bash
+npm run dev
+```
+
+기본 주소:
+
+```text
+http://localhost:5173
+```
+
+### 프로덕션 빌드 미리보기
+
+```bash
+npm run build
+npm run preview
+```
+
+## 테스트와 품질 검사
+
+### 전체 테스트
+
+```bash
+npm test
+```
+
+현재 테스트 범위:
+
+- Yacht Dice 점수 계산
+- 상단 점수 보너스
+- 주사위 굴림과 보관
+- 턴 전환과 게임 종료
+- 회원 승률 계산
+- 게스트 전적 제외
+- 한글 IME 환경의 방 코드 입력 정규화
+
+### 정적 검사
+
+```bash
+npm run lint
+```
+
+### 프론트엔드 프로덕션 빌드
+
+```bash
+npm run build
+```
+
+빌드 명령은 TypeScript project build 후 Vite 번들을 생성합니다.
+
+```text
+tsc -b && vite build
+```
+
+### Lambda 게임 규칙 테스트
+
+```bash
+cd backend/lambda/game-api
+npm test
+```
+
+## AWS 백엔드 배포
+
+상세 콘솔 설정은 다음 문서를 참고하세요.
+
+- [AppSync/Lambda/DynamoDB 설정](./backend/appsync/SETUP.md)
+- [게스트 Identity Pool/IAM 설정](./backend/appsync/GUEST_SETUP.md)
+- [백엔드 개요](./backend/README.md)
+
+### Lambda ZIP 생성
+
+프로젝트 루트에서:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File ".\backend\scripts\build-lambda.ps1"
+```
+
+결과:
+
+```text
+backend/dist/MiniGameJoinApiHandler.zip
+```
+
+ZIP을 Lambda 함수 코드에 업로드하고 Lambda 환경변수와 DynamoDB 실행 역할을 설정해야 합니다.
+
+### Lambda 환경변수
+
+```text
+USERS_TABLE
+ROOMS_TABLE
+MATCHES_TABLE
+CHAT_MESSAGES_TABLE
+PLAYER_MATCHES_TABLE
+COGNITO_USER_POOL_ID
+COGNITO_APP_CLIENT_ID
+COGNITO_IDENTITY_POOL_ID
+```
+
+### 접속 종료 검사
+
+EventBridge Scheduler 또는 EventBridge Rule에서 Lambda에 다음 형태의 이벤트를 주기적으로 전달합니다.
+
+```json
+{
+  "source": "minigamejoin.presence-check"
+}
+```
+
+Lambda는 진행 중인 방을 조회하고 90초 이상 heartbeat가 없는 플레이어를 판정합니다.
+
+## Cloudflare Pages 배포
+
+이 프로젝트는 GitHub의 `master` 브랜치와 Cloudflare Pages를 연결하는 방식으로 배포할 수 있습니다.
+
+### 빌드 설정
+
+| 설정 | 값 |
+|---|---|
+| Production branch | `master` |
+| Framework preset | Vite |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | 비워두기 |
+| Node.js | `22.22.0` 이상 |
+
+Cloudflare 환경변수에는 로컬 `.env.local`과 같은 `VITE_` 설정을 Production과 Preview에 등록합니다.
+
+### 자동 배포 흐름
+
+```text
+로컬 코드 수정
+→ git commit
+→ git push origin master
+→ Cloudflare가 저장소 clone
+→ npm clean-install
+→ npm run build
+→ dist 디렉터리 배포
+→ 기존 pages.dev 주소 자동 갱신
+```
+
+일반적인 배포 명령:
+
+```bash
+git add .
+git commit -m "describe changes"
+git push origin master
+```
+
+`master` 이외 브랜치는 Cloudflare Preview Deployment로 검증한 뒤 병합할 수 있습니다.
+
+## 문제 해결
+
+### Cloudflare에서 `npm ci`가 실패하는 경우
+
+```text
+npm ci can only install packages when package.json and package-lock.json are in sync
+```
+
+Cloudflare와 같은 npm 버전으로 lock 파일을 다시 생성합니다.
+
+```bash
+npx npm@10.9.2 install --package-lock-only
+npx npm@10.9.2 ci
+npm run build
+```
+
+변경된 `package-lock.json`을 반드시 커밋하고 push해야 합니다.
+
+### React Router `EBADENGINE`
+
+React Router 8.3은 Node.js `22.22.0` 이상을 요구합니다.
+
+Cloudflare Pages 환경변수:
+
+```text
+NODE_VERSION=22.22.0
+```
+
+### AppSync `Permission denied`
+
+IAM 정책 ARN에는 GraphQL URL의 호스트 식별자가 아니라 AppSync의 실제 `apiId`를 사용해야 합니다.
+
+실제 API ARN 확인:
+
+```bash
+aws appsync list-graphql-apis \
+  --region ap-northeast-2 \
+  --query "graphqlApis[].{name:name,apiId:apiId,arn:arn,graphqlUrl:uris.GRAPHQL}" \
+  --output table
+```
+
+GraphQL URL 앞부분과 AppSync `apiId`가 서로 다를 수 있습니다.
+
+### 배포 후 흰 화면
+
+다음을 확인합니다.
+
+1. Cloudflare 빌드가 성공했는지
+2. Output directory가 `dist`인지
+3. 모든 `VITE_` 환경변수가 등록됐는지
+4. 브라우저 개발자 도구 Console 오류
+5. `/yacht-dice/online` 직접 접속 시 SPA 라우팅 여부
+
+### 파비콘이 이전 로고로 보이는 경우
+
+브라우저는 파비콘을 오래 캐시할 수 있습니다.
+
+- `Ctrl + Shift + R`로 강력 새로고침
+- 시크릿 창에서 확인
+- Cloudflare 배포가 최신 Git 커밋인지 확인
+
+## 로드맵
+
+### 게임
+
+- 가위바위보
+- 스피드 퀴즈
+- 추가 미니게임을 위한 공통 로비/방 인터페이스
+
+### 온라인 기능
+
+- 방 상태의 완전한 Subscription 기반 실시간 동기화
+- 게스트 채팅 WebSocket 연결
+- 재접속과 경기 복구 정책 강화
+- 초대 링크 공유
+- 공개방 목록과 빠른 참가
+- 신고, 차단, 채팅 관리 기능
+
+### 운영
+
+- 커스텀 도메인
+- Cloudflare Web Analytics
+- AWS CloudWatch 로그와 경보
+- DynamoDB 사용량 및 비용 모니터링
+- CI에서 lint, test, build 자동 검사
+- 접근성 및 모바일 UX 개선
+
+## Git 작업 흐름
+
+기능 브랜치:
+
+```bash
+git switch -c feature/feature-name
+```
+
+검사:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+커밋:
+
+```bash
+git add .
+git commit -m "feat: describe the feature"
+git push -u origin feature/feature-name
+```
+
+운영 브랜치인 `master`에 병합되고 push되면 Cloudflare Pages가 자동으로 운영 배포를 시작합니다.
+
+## 라이선스
+
+현재 별도의 오픈소스 라이선스가 명시되어 있지 않습니다. 코드의 복제, 배포 또는 상업적 사용 전 저장소 소유자의 허가가 필요합니다.
