@@ -1,0 +1,184 @@
+enum RoomStatus {
+  waiting
+  ready
+  playing
+  finished
+  cancelled
+}
+
+enum ScoreCategory {
+  ones
+  twos
+  threes
+  fours
+  fives
+  sixes
+  choice
+  fourOfAKind
+  fullHouse
+  smallStraight
+  largeStraight
+  yacht
+}
+
+enum MatchFinishReason {
+  completed
+  forfeit
+  disconnectTimeout
+}
+
+enum MatchResult {
+  win
+  loss
+  draw
+}
+
+type UserProfile {
+  userId: ID!
+  email: AWSEmail!
+  nickname: String!
+  wins: Int!
+  losses: Int!
+  winRate: Float!
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+}
+
+type ScoreEntry {
+  category: ScoreCategory!
+  score: Int!
+}
+
+type RoomPlayer {
+  userId: ID!
+  nickname: String!
+  isHost: Boolean!
+  isReady: Boolean!
+  slot: Int!
+  scores: [ScoreEntry!]!
+}
+
+type Die {
+  id: Int!
+  value: Int
+  isHeld: Boolean!
+}
+
+type Room {
+  roomCode: ID!
+  gameId: String!
+  status: RoomStatus!
+  players: [RoomPlayer!]!
+  activePlayerId: ID
+  dice: [Die!]!
+  rollCount: Int!
+  version: Int!
+  winnerId: ID
+  finishReason: MatchFinishReason
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  expiresAt: AWSTimestamp!
+}
+
+type ChatMessage {
+  id: ID!
+  roomCode: ID!
+  senderId: ID!
+  senderNickname: String!
+  text: String!
+  sentAt: AWSDateTime!
+}
+
+type MatchHistoryItem {
+  matchId: ID!
+  roomCode: ID!
+  result: MatchResult!
+  reason: MatchFinishReason!
+  myScore: Int!
+  opponentScore: Int!
+  opponentNickname: String!
+  finishedAt: AWSDateTime!
+}
+
+type MatchHistoryPage {
+  items: [MatchHistoryItem!]!
+  nextToken: String
+}
+
+type MatchPlayer {
+  userId: ID!
+  nickname: String!
+  slot: Int!
+  totalScore: Int!
+  scores: [ScoreEntry!]!
+}
+
+type MatchDetail {
+  matchId: ID!
+  roomCode: ID!
+  result: MatchResult!
+  reason: MatchFinishReason!
+  winnerId: ID
+  players: [MatchPlayer!]!
+  finishedAt: AWSDateTime!
+}
+
+type Query {
+  me: UserProfile!
+  room(roomCode: ID!): Room!
+  listChatMessages(roomCode: ID!, limit: Int): [ChatMessage!]!
+  myMatchHistory(limit: Int, nextToken: String): MatchHistoryPage!
+  matchDetail(matchId: ID!): MatchDetail!
+}
+
+type Mutation {
+  ensureProfile(nickname: String!): UserProfile!
+  updateNickname(nickname: String!): UserProfile!
+  deleteMyProfile: Boolean!
+
+  createRoom: Room!
+  joinRoom(roomCode: ID!): Room!
+  leaveRoom(roomCode: ID!, expectedVersion: Int!): Room!
+  setReady(roomCode: ID!, ready: Boolean!, expectedVersion: Int!): Room!
+  startGame(roomCode: ID!, expectedVersion: Int!): Room!
+
+  rollDice(
+    roomCode: ID!
+    heldIndexes: [Int!]!
+    expectedVersion: Int!
+  ): Room!
+  confirmScore(
+    roomCode: ID!
+    category: ScoreCategory!
+    expectedVersion: Int!
+  ): Room!
+  forfeit(roomCode: ID!, expectedVersion: Int!): Room!
+
+  heartbeat(roomCode: ID!): Boolean!
+  claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
+  sendChatMessage(roomCode: ID!, text: String!): ChatMessage!
+}
+
+type Subscription {
+  onRoomChanged(roomCode: ID!): Room
+    @aws_subscribe(
+      mutations: [
+        "joinRoom"
+        "leaveRoom"
+        "setReady"
+        "startGame"
+        "rollDice"
+        "confirmScore"
+        "forfeit"
+        "claimDisconnectWin"
+      ]
+    )
+  onChatMessage(roomCode: ID!): ChatMessage
+    @aws_subscribe(mutations: ["sendChatMessage"])
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
