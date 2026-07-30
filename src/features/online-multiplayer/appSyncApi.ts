@@ -1,4 +1,9 @@
 import { getCurrentMemberIdToken } from '../auth/cognitoAuth'
+import {
+  isGuestAwsAuthConfigured,
+  signAppSyncGuestRequest,
+  type SignedAppSyncRequest,
+} from './guestAwsAuth'
 import type {
   MatchDetail,
   MatchHistoryPage,
@@ -161,6 +166,15 @@ const ROOM_FIELDS = `
   expiresAt
 `
 
+const FORFEIT_ON_PAGE_EXIT_MUTATION = `
+  mutation Forfeit($roomCode: ID!, $expectedVersion: Int!) {
+    forfeit(roomCode: $roomCode, expectedVersion: $expectedVersion) {
+      roomCode
+      status
+    }
+  }
+`
+
 export class OnlineApiError extends Error {
   constructor(message: string) {
     super(message)
@@ -174,6 +188,30 @@ export function isAppSyncConfigured(): boolean {
   )
 }
 
+export function isGuestOnlineConfigured(): boolean {
+  return isAppSyncConfigured() && isGuestAwsAuthConfigured()
+}
+
+async function createGraphqlRequest(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<SignedAppSyncRequest> {
+  const body = JSON.stringify({ query, variables })
+
+  try {
+    const idToken = await getCurrentMemberIdToken()
+    return {
+      body,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: idToken,
+      },
+    }
+  } catch {
+    return signAppSyncGuestRequest(appSyncGraphqlUrl, body)
+  }
+}
+
 async function graphqlRequest<TData>(
   query: string,
   variables: Record<string, unknown> = {},
@@ -184,14 +222,11 @@ async function graphqlRequest<TData>(
     )
   }
 
-  const idToken = await getCurrentMemberIdToken()
+  const request = await createGraphqlRequest(query, variables)
   const response = await fetch(appSyncGraphqlUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: idToken,
-    },
-    body: JSON.stringify({ query, variables }),
+    headers: request.headers,
+    body: request.body,
   })
 
   let result: GraphqlResponse<TData>
@@ -237,9 +272,14 @@ function createAppSyncRealtimeUrl(idToken: string): string {
 
 export function subscribeToOnlineChat(
   roomCode: string,
+  userKind: OnlineUser['kind'],
   onMessage: (message: RealtimeChatMessage) => void,
   onError: (message: string) => void,
 ): () => void {
+  if (userKind === 'guest') {
+    return () => undefined
+  }
+
   let socket: WebSocket | null = null
   let reconnectTimer: number | null = null
   let stopped = false
@@ -483,13 +523,16 @@ export async function deleteOnlineProfile(): Promise<void> {
   )
 }
 
-export async function createOnlineRoom(): Promise<OnlineRoom> {
+export async function createOnlineRoom(
+  guestNickname?: string,
+): Promise<OnlineRoom> {
   const data = await graphqlRequest<{ createRoom: RoomDto }>(
-    `mutation CreateRoom {
-      createRoom {
+    `mutation CreateRoom($guestNickname: String) {
+      createRoom(guestNickname: $guestNickname) {
         ${ROOM_FIELDS}
       }
     }`,
+    { guestNickname: guestNickname ?? null },
   )
 
   return mapRoom(data.createRoom)
@@ -497,14 +540,15 @@ export async function createOnlineRoom(): Promise<OnlineRoom> {
 
 export async function joinOnlineRoom(
   roomCode: string,
+  guestNickname?: string,
 ): Promise<OnlineRoom> {
   const data = await graphqlRequest<{ joinRoom: RoomDto }>(
-    `mutation JoinRoom($roomCode: ID!) {
-      joinRoom(roomCode: $roomCode) {
+    `mutation JoinRoom($roomCode: ID!, $guestNickname: String) {
+      joinRoom(roomCode: $roomCode, guestNickname: $guestNickname) {
         ${ROOM_FIELDS}
       }
     }`,
-    { roomCode },
+    { roomCode, guestNickname: guestNickname ?? null },
   )
 
   return mapRoom(data.joinRoom)
@@ -657,6 +701,37 @@ export async function forfeitOnlineGame(
   )
 
   return mapRoom(data.forfeit)
+}
+
+export async function prepareOnlineForfeitOnPageExit(
+  room: OnlineRoom,
+): Promise<SignedAppSyncRequest | null> {
+  if (
+    !isAppSyncConfigured() ||
+    typeof room.version !== 'number'
+  ) {
+    return null
+  }
+
+  return createGraphqlRequest(FORFEIT_ON_PAGE_EXIT_MUTATION, {
+    roomCode: room.code,
+    expectedVersion: room.version,
+  })
+}
+
+export function sendOnlineForfeitOnPageExit(
+  request: SignedAppSyncRequest | null,
+): void {
+  if (!request) {
+    return
+  }
+
+  void fetch(appSyncGraphqlUrl, {
+    method: 'POST',
+    headers: request.headers,
+    body: request.body,
+    keepalive: true,
+  }).catch(() => undefined)
 }
 
 export async function sendOnlineHeartbeat(roomCode: string): Promise<void> {

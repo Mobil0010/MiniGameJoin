@@ -1,4 +1,8 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import {
+  type FormEvent,
+  useEffect,
+  useState,
+} from 'react'
 import { Link } from 'react-router'
 import {
   confirmMemberEmailChange,
@@ -25,6 +29,7 @@ import {
   getOnlineRoom,
   getOnlineProfile,
   isAppSyncConfigured,
+  isGuestOnlineConfigured,
   joinOnlineRoom,
   leaveOnlineRoom,
   setOnlineReady,
@@ -33,9 +38,13 @@ import {
 } from '../features/online-multiplayer/appSyncApi'
 import OnlineYachtGame from '../features/online-multiplayer/OnlineYachtGame'
 import {
+  clearGuestAwsSession,
+  createOnlineGuestUser,
+} from '../features/online-multiplayer/guestAwsAuth'
+import { normalizeRoomCodeInput } from '../features/online-multiplayer/roomCodeInput'
+import {
   calculateMemberWinRate,
   clearPrototypeUser,
-  createPrototypeUser,
   loadPrototypeUser,
   persistPrototypeUser,
 } from '../features/online-multiplayer/prototype'
@@ -72,6 +81,7 @@ function YachtOnlinePage() {
   const [profileNotice, setProfileNotice] = useState('')
   const [pendingEmailChange, setPendingEmailChange] = useState('')
   const appSyncConfigured = isAppSyncConfigured()
+  const guestOnlineConfigured = isGuestOnlineConfigured()
   const isOnlineMatchVisible =
     room?.status === 'playing' || room?.status === 'finished'
 
@@ -80,8 +90,42 @@ function YachtOnlinePage() {
     const storedUser = loadPrototypeUser()
 
     if (storedUser?.kind === 'guest') {
-      setUser(storedUser)
-      setIsRestoringSession(false)
+      if (!guestOnlineConfigured) {
+        setUser(storedUser)
+        setNotice(
+          '게스트 온라인 플레이용 Cognito Identity Pool이 아직 연결되지 않았습니다.',
+        )
+        setIsRestoringSession(false)
+        return () => {
+          isActive = false
+        }
+      }
+
+      void createOnlineGuestUser(storedUser.nickname)
+        .then((restoredGuest) => {
+          if (isActive) {
+            persistPrototypeUser(restoredGuest)
+            setUser(restoredGuest)
+          }
+        })
+        .catch((error) => {
+          if (isActive) {
+            clearPrototypeUser()
+            setUser(null)
+            setAuthView('guest')
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : '게스트 접속 정보를 복원하지 못했습니다.',
+            )
+          }
+        })
+        .finally(() => {
+          if (isActive) {
+            setIsRestoringSession(false)
+          }
+        })
+
       return () => {
         isActive = false
       }
@@ -119,12 +163,12 @@ function YachtOnlinePage() {
     return () => {
       isActive = false
     }
-  }, [appSyncConfigured])
+  }, [appSyncConfigured, guestOnlineConfigured])
 
   useEffect(() => {
     if (
       !appSyncConfigured ||
-      user?.kind !== 'member' ||
+      !user ||
       !room ||
       room.status === 'finished' ||
       room.status === 'cancelled'
@@ -295,7 +339,7 @@ function YachtOnlinePage() {
     }
   }
 
-  const enterAsGuest = (event: FormEvent<HTMLFormElement>) => {
+  const enterAsGuest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const nickname = String(formData.get('nickname') ?? '').trim()
@@ -304,14 +348,33 @@ function YachtOnlinePage() {
       return
     }
 
-    const nextUser = createPrototypeUser(nickname, 'guest')
-    persistPrototypeUser(nextUser)
-    setUser(nextUser)
-    setNotice('')
+    setIsAuthSubmitting(true)
+    setAuthError('')
+
+    try {
+      if (!guestOnlineConfigured) {
+        throw new Error(
+          '게스트 온라인 플레이용 Cognito Identity Pool이 아직 연결되지 않았습니다.',
+        )
+      }
+
+      const nextUser = await createOnlineGuestUser(nickname)
+      persistPrototypeUser(nextUser)
+      setUser(nextUser)
+      setNotice('')
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : '게스트로 접속하지 못했습니다.',
+      )
+    } finally {
+      setIsAuthSubmitting(false)
+    }
   }
 
   const createRoom = async () => {
-    if (!user || user.kind !== 'member') {
+    if (!user) {
       return
     }
 
@@ -319,7 +382,11 @@ function YachtOnlinePage() {
     setNotice('')
 
     try {
-      setRoom(await createOnlineRoom())
+      setRoom(
+        await createOnlineRoom(
+          user.kind === 'guest' ? user.nickname : undefined,
+        ),
+      )
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -339,8 +406,7 @@ function YachtOnlinePage() {
       return
     }
 
-    if (user?.kind !== 'member') {
-      setNotice('비회원 온라인 플레이는 Identity Pool 연결 후 제공됩니다.')
+    if (!user) {
       return
     }
 
@@ -348,7 +414,12 @@ function YachtOnlinePage() {
     setNotice('')
 
     try {
-      setRoom(await joinOnlineRoom(joinCode))
+      setRoom(
+        await joinOnlineRoom(
+          joinCode,
+          user.kind === 'guest' ? user.nickname : undefined,
+        ),
+      )
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -363,6 +434,8 @@ function YachtOnlinePage() {
   const leaveOnline = () => {
     if (user?.kind === 'member') {
       signOutMember()
+    } else {
+      clearGuestAwsSession()
     }
 
     clearPrototypeUser()
@@ -490,7 +563,7 @@ function YachtOnlinePage() {
   }
 
   const exitWaitingRoom = async () => {
-    if (!room || user?.kind !== 'member') {
+    if (!room || !user) {
       setRoom(null)
       return
     }
@@ -510,7 +583,7 @@ function YachtOnlinePage() {
   }
 
   const toggleReady = async () => {
-    if (!room || !user || user.kind !== 'member') {
+    if (!room || !user) {
       return
     }
 
@@ -538,7 +611,7 @@ function YachtOnlinePage() {
   }
 
   const startGame = async () => {
-    if (!room || user?.kind !== 'member') {
+    if (!room || !user) {
       return
     }
 
@@ -829,7 +902,9 @@ function YachtOnlinePage() {
                     required
                   />
                 </label>
-                <button type="submit">게스트로 계속</button>
+                <button type="submit" disabled={isAuthSubmitting}>
+                  {isAuthSubmitting ? '연결 중…' : '게스트로 계속'}
+                </button>
               </form>
             ) : (
               <form
@@ -1055,7 +1130,11 @@ function YachtOnlinePage() {
               <p>방장이 되어 친구를 기다리고 초대 코드를 공유합니다.</p>
               <button
                 type="button"
-                disabled={isLobbySubmitting || user.kind !== 'member'}
+                disabled={
+                  isLobbySubmitting ||
+                  !appSyncConfigured ||
+                  (user.kind === 'guest' && !guestOnlineConfigured)
+                }
                 onClick={createRoom}
               >
                 {isLobbySubmitting ? '처리 중…' : '방 만들기'}
@@ -1069,21 +1148,27 @@ function YachtOnlinePage() {
               <form className="join-room-form" onSubmit={joinRoom}>
                 <input
                   type="text"
+                  lang="en"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={joinCode}
                   maxLength={6}
+                  pattern="[A-Za-z0-9]{6}"
                   aria-label="6자리 방 코드"
                   placeholder="ABC123"
                   onChange={(event) =>
-                    setJoinCode(
-                      event.target.value
-                        .toUpperCase()
-                        .replace(/[^A-Z0-9]/g, ''),
-                    )
+                    setJoinCode(normalizeRoomCodeInput(event.target.value))
                   }
                 />
                 <button
                   type="submit"
-                  disabled={isLobbySubmitting || user.kind !== 'member'}
+                  disabled={
+                    isLobbySubmitting ||
+                    !appSyncConfigured ||
+                    (user.kind === 'guest' && !guestOnlineConfigured)
+                  }
                 >
                   방 참가
                 </button>

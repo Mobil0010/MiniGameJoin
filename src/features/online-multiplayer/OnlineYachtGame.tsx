@@ -21,7 +21,9 @@ import type {
 import {
   confirmOnlineScore,
   forfeitOnlineGame,
+  prepareOnlineForfeitOnPageExit,
   rollOnlineDice,
+  sendOnlineForfeitOnPageExit,
   sendOnlineHeartbeat,
 } from './appSyncApi'
 import OnlineChatPanel from './OnlineChatPanel'
@@ -62,6 +64,9 @@ function OnlineYachtGame({
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
   const celebrationTimerRef = useRef<number | null>(null)
   const lastCelebratedVersionRef = useRef<number | null>(null)
+  const pageExitRequestRef = useRef<Awaited<
+    ReturnType<typeof prepareOnlineForfeitOnPageExit>
+  >>(null)
   const heldStateKey = `${room.activePlayerId ?? ''}:${room.rollCount ?? 0}`
   const lastHeldStateKeyRef = useRef(heldStateKey)
 
@@ -151,6 +156,45 @@ function OnlineYachtGame({
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [room.status])
+
+  useEffect(() => {
+    if (room.status !== 'playing') {
+      pageExitRequestRef.current = null
+      return
+    }
+
+    let active = true
+
+    void prepareOnlineForfeitOnPageExit(room)
+      .then((request) => {
+        if (active) {
+          pageExitRequestRef.current = request
+        }
+      })
+      .catch(() => {
+        if (active) {
+          pageExitRequestRef.current = null
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [room, user.id])
+
+  useEffect(() => {
+    if (room.status !== 'playing') {
+      return
+    }
+
+    const forfeitAfterConfirmedPageExit = () => {
+      sendOnlineForfeitOnPageExit(pageExitRequestRef.current)
+    }
+
+    window.addEventListener('pagehide', forfeitAfterConfirmedPageExit)
+    return () =>
+      window.removeEventListener('pagehide', forfeitAfterConfirmedPageExit)
+  }, [room])
 
   useEffect(() => {
     if (room.status !== 'playing') {
@@ -315,7 +359,7 @@ function OnlineYachtGame({
               : '세 번 모두 굴렸습니다. 점수 항목을 선택하세요.'
 
   return (
-    <>
+    <div className="online-game-shell">
       {showExitDialog && (
         <OnlineMatchExitDialog
           isSubmitting={isSubmitting}
@@ -451,7 +495,7 @@ function OnlineYachtGame({
       <div className="online-chat-section">
         <OnlineChatPanel roomCode={room.code} user={user} />
       </div>
-    </>
+    </div>
   )
 }
 

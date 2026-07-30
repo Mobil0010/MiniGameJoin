@@ -22,14 +22,17 @@ CHAT_MESSAGES_TABLE=MiniGameJoinChatMessages
 PLAYER_MATCHES_TABLE=MiniGameJoinPlayerMatches
 COGNITO_USER_POOL_ID=ap-northeast-2_wKEL9hhbQ
 COGNITO_APP_CLIENT_ID=5icj3sfkbd83t6fdpuas69damg
+COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
 ```
 
 ## 보안 원칙
 
-- 사용자 ID는 클라이언트 입력이 아니라 AppSync의 `identity.sub`를 사용합니다.
+- 회원 ID는 AppSync의 `identity.sub`, 게스트 ID는 검증된
+  `identity.cognitoIdentityId`를 사용합니다.
 - 주사위 값과 점수는 Lambda에서 계산합니다.
 - 방 상태 변경에는 `version` 조건을 사용해 중복 요청을 차단합니다.
 - 경기 결과와 회원 전적은 DynamoDB 트랜잭션으로 함께 기록합니다.
+- 게스트가 참가한 경기는 회원 전적에 반영하지 않습니다.
 - 채팅은 방 참가자만 읽고 쓸 수 있으며 7일 TTL로 정리합니다.
 - 진행 중인 방은 heartbeat와 90초 유예시간으로 접속 종료를 판정합니다.
 

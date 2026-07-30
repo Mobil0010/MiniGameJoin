@@ -44,12 +44,12 @@ type UserProfile {
   updatedAt: AWSDateTime!
 }
 
-type ScoreEntry {
+type ScoreEntry @aws_cognito_user_pools @aws_iam {
   category: ScoreCategory!
   score: Int!
 }
 
-type RoomPlayer {
+type RoomPlayer @aws_cognito_user_pools @aws_iam {
   userId: ID!
   nickname: String!
   isHost: Boolean!
@@ -58,13 +58,13 @@ type RoomPlayer {
   scores: [ScoreEntry!]!
 }
 
-type Die {
+type Die @aws_cognito_user_pools @aws_iam {
   id: Int!
   value: Int
   isHeld: Boolean!
 }
 
-type Room {
+type Room @aws_cognito_user_pools @aws_iam {
   roomCode: ID!
   gameId: String!
   status: RoomStatus!
@@ -80,7 +80,7 @@ type Room {
   expiresAt: AWSTimestamp!
 }
 
-type ChatMessage {
+type ChatMessage @aws_cognito_user_pools @aws_iam {
   id: ID!
   roomCode: ID!
   senderId: ID!
@@ -125,8 +125,10 @@ type MatchDetail {
 
 type Query {
   me: UserProfile!
-  room(roomCode: ID!): Room!
+  room(roomCode: ID!): Room! @aws_cognito_user_pools @aws_iam
   listChatMessages(roomCode: ID!, limit: Int): [ChatMessage!]!
+    @aws_cognito_user_pools
+    @aws_iam
   myMatchHistory(limit: Int, nextToken: String): MatchHistoryPage!
   matchDetail(matchId: ID!): MatchDetail!
 }
@@ -136,31 +138,49 @@ type Mutation {
   updateNickname(nickname: String!): UserProfile!
   deleteMyProfile: Boolean!
 
-  createRoom: Room!
-  joinRoom(roomCode: ID!): Room!
+  createRoom(guestNickname: String): Room!
+    @aws_cognito_user_pools
+    @aws_iam
+  joinRoom(roomCode: ID!, guestNickname: String): Room!
+    @aws_cognito_user_pools
+    @aws_iam
   leaveRoom(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
   setReady(roomCode: ID!, ready: Boolean!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
   startGame(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
 
   rollDice(
     roomCode: ID!
     heldIndexes: [Int!]!
     expectedVersion: Int!
-  ): Room!
+  ): Room! @aws_cognito_user_pools @aws_iam
   confirmScore(
     roomCode: ID!
     category: ScoreCategory!
     expectedVersion: Int!
-  ): Room!
+  ): Room! @aws_cognito_user_pools @aws_iam
   forfeit(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
 
-  heartbeat(roomCode: ID!): Boolean!
+  heartbeat(roomCode: ID!): Boolean! @aws_cognito_user_pools @aws_iam
   claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
   sendChatMessage(roomCode: ID!, text: String!): ChatMessage!
+    @aws_cognito_user_pools
+    @aws_iam
 }
 
 type Subscription {
   onRoomChanged(roomCode: ID!): Room
+    @aws_cognito_user_pools
+    @aws_iam
     @aws_subscribe(
       mutations: [
         "joinRoom"
@@ -174,6 +194,8 @@ type Subscription {
       ]
     )
   onChatMessage(roomCode: ID!): ChatMessage
+    @aws_cognito_user_pools
+    @aws_iam
     @aws_subscribe(mutations: ["sendChatMessage"])
 }
 

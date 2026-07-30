@@ -34,6 +34,7 @@ function OnlineChatPanel({
   const [isSending, setIsSending] = useState(false)
   const [connectionMessage, setConnectionMessage] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   const appendMessage = (nextMessage: RealtimeChatMessage) => {
     setMessages((current) => {
@@ -47,30 +48,37 @@ function OnlineChatPanel({
 
   useEffect(() => {
     let active = true
+    let pollingId: number | null = null
 
-    void listOnlineChatMessages(roomCode)
-      .then((items) => {
-        if (active) {
-          setMessages(items)
-        }
-      })
-      .catch((error) => {
-        if (active) {
-          setConnectionMessage(
-            error instanceof Error
-              ? error.message
-              : '채팅 내용을 불러오지 못했습니다.',
-          )
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false)
-        }
-      })
+    const refreshMessages = () => {
+      void listOnlineChatMessages(roomCode)
+        .then((items) => {
+          if (active) {
+            setMessages(items)
+            setConnectionMessage('')
+          }
+        })
+        .catch((error) => {
+          if (active) {
+            setConnectionMessage(
+              error instanceof Error
+                ? error.message
+                : '채팅 내용을 불러오지 못했습니다.',
+            )
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setIsLoading(false)
+          }
+        })
+    }
+
+    refreshMessages()
 
     const unsubscribe = subscribeToOnlineChat(
       roomCode,
+      user.kind,
       (nextMessage) => {
         if (active) {
           appendMessage(nextMessage)
@@ -84,11 +92,18 @@ function OnlineChatPanel({
       },
     )
 
+    if (user.kind === 'guest') {
+      pollingId = window.setInterval(refreshMessages, 2500)
+    }
+
     return () => {
       active = false
       unsubscribe()
+      if (pollingId !== null) {
+        window.clearInterval(pollingId)
+      }
     }
-  }, [roomCode])
+  }, [roomCode, user.kind])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -103,11 +118,14 @@ function OnlineChatPanel({
     }
 
     setIsSending(true)
+    setMessage('')
     setConnectionMessage('')
+    inputRef.current?.focus()
+
     try {
       appendMessage(await sendOnlineChatMessage(roomCode, text))
-      setMessage('')
     } catch (error) {
+      setMessage((currentMessage) => currentMessage || text)
       setConnectionMessage(
         error instanceof Error
           ? error.message
@@ -115,23 +133,15 @@ function OnlineChatPanel({
       )
     } finally {
       setIsSending(false)
+      window.requestAnimationFrame(() => inputRef.current?.focus())
     }
   }
 
   return (
     <aside
       className="online-chat-panel"
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="online-chat-title"
+      aria-label="게임 채팅"
     >
-      <header>
-        <div>
-          <span>LIVE CHAT · ROOM {roomCode}</span>
-          <h2 id="online-chat-title">게임 채팅</h2>
-        </div>
-      </header>
-
       <div className="chat-message-list" aria-live="polite">
         {isLoading ? (
           <p className="chat-state-message">채팅을 불러오는 중…</p>
@@ -157,7 +167,9 @@ function OnlineChatPanel({
                     : chatMessage.senderNickname
                 }
               >
-                {chatMessage.senderId === user.id ? '나' : '상대'}
+                {chatMessage.senderId === user.id
+                  ? '나'
+                  : chatMessage.senderNickname || '상대'}
               </strong>
               <span className="chat-separator">:</span>
               <p>{chatMessage.text}</p>
@@ -175,12 +187,12 @@ function OnlineChatPanel({
           </p>
         )}
         <input
+          ref={inputRef}
           type="text"
           value={message}
           maxLength={200}
           aria-label="채팅 메시지"
           placeholder="메시지를 입력하세요"
-          disabled={isSending}
           onChange={(event) => setMessage(event.target.value)}
         />
         <button

@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import {
   BatchWriteCommand,
@@ -24,6 +24,7 @@ const ROOMS_TABLE = process.env.ROOMS_TABLE
 const MATCHES_TABLE = process.env.MATCHES_TABLE
 const CHAT_MESSAGES_TABLE = process.env.CHAT_MESSAGES_TABLE
 const PLAYER_MATCHES_TABLE = process.env.PLAYER_MATCHES_TABLE
+const COGNITO_IDENTITY_POOL_ID = process.env.COGNITO_IDENTITY_POOL_ID
 const ROOM_CODE_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ROOM_TTL_SECONDS = 24 * 60 * 60
 const CANCELLED_ROOM_TTL_SECONDS = 60 * 60
@@ -39,6 +40,7 @@ for (const [name, value] of Object.entries({
   MATCHES_TABLE,
   CHAT_MESSAGES_TABLE,
   PLAYER_MATCHES_TABLE,
+  COGNITO_IDENTITY_POOL_ID,
 })) {
   if (!value) {
     throw new Error(`Lambda 환경 변수 ${name}이(가) 설정되지 않았습니다.`)
@@ -123,17 +125,37 @@ function getMatchResult(userId, winnerId) {
 }
 
 function requireIdentity(event) {
-  const userId = event.identity?.sub
-  const email = event.identity?.claims?.email
+  const identity = event.identity
+  const userId = identity?.sub
+  const email = identity?.claims?.email
 
-  if (!userId || !email) {
-    throw new Error('로그인 정보가 없거나 만료되었습니다.')
+  if (userId && email) {
+    return {
+      userId: String(userId),
+      email: String(email),
+      isGuest: false,
+    }
   }
 
-  return {
-    userId: String(userId),
-    email: String(email),
+  const guestIdentityId = identity?.cognitoIdentityId
+  const guestIdentityPoolId = identity?.cognitoIdentityPoolId
+  const guestAuthType = identity?.cognitoIdentityAuthType
+
+  if (
+    guestIdentityId &&
+    guestIdentityPoolId === COGNITO_IDENTITY_POOL_ID &&
+    guestAuthType === 'unauthenticated'
+  ) {
+    return {
+      userId: `guest:${createHash('sha256')
+        .update(String(guestIdentityId))
+        .digest('hex')}`,
+      email: null,
+      isGuest: true,
+    }
   }
+
+  throw new Error('로그인 또는 게스트 인증 정보가 없거나 만료되었습니다.')
 }
 
 function requireExpectedVersion(room, expectedVersion) {
@@ -369,8 +391,10 @@ async function deleteMyProfile(event) {
 }
 
 async function createRoom(event) {
-  const { userId } = requireIdentity(event)
-  const profile = await getProfile(userId)
+  const { userId, isGuest } = requireIdentity(event)
+  const nickname = isGuest
+    ? normalizeNickname(event.arguments.guestNickname)
+    : (await getProfile(userId)).nickname
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const roomCode = createRoomCode()
@@ -383,7 +407,8 @@ async function createRoom(event) {
       players: [
         {
           userId,
-          nickname: profile.nickname,
+          nickname,
+          isGuest,
           isHost: true,
           isReady: true,
           slot: 1,
@@ -491,8 +516,10 @@ async function authorizeRoomSubscription(event) {
 }
 
 async function joinRoom(event) {
-  const { userId } = requireIdentity(event)
-  const profile = await getProfile(userId)
+  const { userId, isGuest } = requireIdentity(event)
+  const nickname = isGuest
+    ? normalizeNickname(event.arguments.guestNickname)
+    : (await getProfile(userId)).nickname
   const room = await getRoom(event.arguments.roomCode)
 
   if (room.players.some((player) => player.userId === userId)) {
@@ -511,7 +538,8 @@ async function joinRoom(event) {
       ...room.players,
       {
         userId,
-        nickname: profile.nickname,
+        nickname,
+        isGuest,
         isHost: false,
         isReady: false,
         slot: 2,
@@ -700,6 +728,11 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
       finishedAt: timestamp,
     }
   })
+  const isRankedMatch = room.players.every(
+    (player) =>
+      player.isGuest !== true &&
+      !String(player.userId).startsWith('guest:'),
+  )
   const transactionItems = [
     {
       Put: {
@@ -723,17 +756,19 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
         ConditionExpression: 'attribute_not_exists(matchId)',
       },
     },
-    ...playerMatchItems.map((item) => ({
-      Put: {
-        TableName: PLAYER_MATCHES_TABLE,
-        Item: item,
-        ConditionExpression:
-          'attribute_not_exists(userId) AND attribute_not_exists(matchKey)',
-      },
-    })),
+    ...(isRankedMatch
+      ? playerMatchItems.map((item) => ({
+          Put: {
+            TableName: PLAYER_MATCHES_TABLE,
+            Item: item,
+            ConditionExpression:
+              'attribute_not_exists(userId) AND attribute_not_exists(matchKey)',
+          },
+        }))
+      : []),
   ]
 
-  if (winnerId && loserId) {
+  if (isRankedMatch && winnerId && loserId) {
     transactionItems.push(
       {
         Update: {

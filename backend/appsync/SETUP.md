@@ -21,6 +21,7 @@ CHAT_MESSAGES_TABLE=MiniGameJoinChatMessages
 PLAYER_MATCHES_TABLE=MiniGameJoinPlayerMatches
 COGNITO_USER_POOL_ID=ap-northeast-2_wKEL9hhbQ
 COGNITO_APP_CLIENT_ID=5icj3sfkbd83t6fdpuas69damg
+COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
 ```
 
 ## 3. GraphQL 스키마 등록
@@ -115,6 +116,8 @@ AppSync의 `Settings`에서 GraphQL API URL을 복사합니다.
 VITE_AWS_REGION=ap-northeast-2
 VITE_COGNITO_USER_POOL_ID=ap-northeast-2_wKEL9hhbQ
 VITE_COGNITO_APP_CLIENT_ID=5icj3sfkbd83t6fdpuas69damg
+VITE_COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
+VITE_COGNITO_GUEST_ROLE_ARN=arn:aws:iam::621641242785:role/service-role/MiniGameJoinGuestRole
 VITE_APPSYNC_GRAPHQL_URL=https://실제_API_ID.appsync-api.ap-northeast-2.amazonaws.com/graphql
 ```
 
