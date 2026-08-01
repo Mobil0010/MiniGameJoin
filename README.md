@@ -336,16 +336,26 @@ Android 앱은 JavaScript 브리지 `MiniGameJoinNative`와 사용자 정의 이
     "minimumVersionCode": 1,
     "title": "새 업데이트가 있습니다",
     "message": "새 기능과 안정성 개선이 포함되었습니다.",
-    "updateUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest"
+    "updateUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest",
+    "releasePageUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest",
+    "apkUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest/download/MiniGameJoin.apk",
+    "apkSha256": "sha256:APK_SHA256"
   }
 }
 ```
 
 - `latestVersionCode`가 설치된 앱보다 크면 업데이트 안내를 표시합니다.
 - `minimumVersionCode`가 설치된 앱보다 크면 나중에 버튼이 없는 필수 업데이트가 됩니다.
-- 업데이트 버튼은 `updateUrl`을 외부 브라우저 또는 Play Store로 엽니다.
-- Android 보안 정책상 일반 웹 앱이 사용자 동의 없이 APK를 자동 설치할 수는 없습니다.
+- 안내창에는 현재 설치 버전과 GitHub 배포 버전을 함께 표시합니다.
+- 업데이트 버튼을 누르면 `apkUrl`의 GitHub Release APK를 Android DownloadManager가 내려받습니다.
+- 다운로드가 끝나면 완료 알림을 표시하고, 사용자가 알림을 누르면 Android 시스템 설치 화면을 엽니다.
+- `apkSha256`, Application ID, `versionCode`, APK 서명을 검사한 뒤에만 설치 화면으로 이동합니다.
+- 최초 한 번은 MiniGameJoin에 대한 `알 수 없는 앱 설치` 허용이 필요합니다.
+- Android 보안 정책상 시스템 설치 화면의 마지막 `업데이트` 확인은 사용자가 직접 눌러야 합니다.
 - 업데이트 JSON을 읽지 못해도 게임 실행은 막지 않고 기존 버전으로 계속 접속합니다.
+- `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
+- `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
+- `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
 
 웹 기능만 수정했다면 앱 버전을 올릴 필요가 없습니다. 네이티브 코드를 변경해 새 APK를 배포할 때만 `versionCode`, `versionName`, 업데이트 JSON을 함께 변경합니다.
 
@@ -881,13 +891,27 @@ app\build\outputs\apk\debug\app-debug.apk
 1. Android 프로젝트의 `app/build.gradle.kts`에서 `versionCode`를 반드시 증가시킵니다.
 2. 사용자에게 표시할 `versionName`도 변경합니다.
 3. 단위 테스트, lint 및 release 빌드를 실행합니다.
-4. 본인 소유의 Android Keystore로 release APK 또는 AAB를 서명합니다.
-5. GitHub Releases 또는 Google Play Console에 새 설치 파일을 업로드합니다.
-6. 웹 저장소의 `public/app-update.json`에 새 버전과 다운로드 주소를 기록합니다.
+4. 본인 소유의 Android Keystore로 release APK를 서명합니다.
+5. APK 이름을 반드시 `MiniGameJoin.apk`로 맞춰 GitHub Release 자산에 업로드합니다.
+6. 웹 저장소의 `public/app-update.json`에 새 버전과 APK SHA-256을 기록합니다.
 7. 웹 변경사항을 `master`에 push하고 Cloudflare Pages 배포를 확인합니다.
 8. 실제 기기의 이전 버전 앱을 실행하여 업데이트 안내와 이동 주소를 검증합니다.
 
 `versionCode`는 Android가 새 버전 여부를 판별하는 정수이므로 이전 배포보다 항상 커야 합니다. `versionName`은 사용자에게 보이는 문자열입니다.
+
+GitHub Release 태그는 `android-v1.1.0`처럼 관리하고, 자산 파일명은 버전과 무관하게 항상 `MiniGameJoin.apk`로 유지합니다. 그러면 다음 고정 주소가 항상 최신 Release의 APK를 가리킵니다.
+
+```text
+https://github.com/Mobil0010/MiniGameJoin/releases/latest/download/MiniGameJoin.apk
+```
+
+PowerShell에서 APK SHA-256 확인:
+
+```powershell
+Get-FileHash .\MiniGameJoin.apk -Algorithm SHA256
+```
+
+출력된 값을 `app-update.json`의 `apkSha256`에 기록하면 다운로드 파일이 Release에 올린 파일과 같은지 앱에서 확인합니다.
 
 ### 선택 업데이트와 필수 업데이트
 
@@ -995,7 +1019,9 @@ https://mini-gamejoin.pages.dev/app-update.json
 - 기존 앱과 새 APK가 같은 Application ID인지 확인합니다.
 - 두 APK가 같은 Keystore로 서명되었는지 확인합니다.
 - 새 APK의 `versionCode`가 기존 앱보다 큰지 확인합니다.
-- GitHub Releases의 `updateUrl`이 실제 APK 파일 또는 다운로드 페이지를 가리키는지 확인합니다.
+- GitHub Release 자산 이름이 정확히 `MiniGameJoin.apk`인지 확인합니다.
+- `apkUrl`이 `/releases/latest/download/MiniGameJoin.apk`로 끝나는지 확인합니다.
+- `apkSha256`이 실제 Release APK의 SHA-256과 일치하는지 확인합니다.
 - 디버그 서명 앱 위에 다른 release 서명 앱을 덮어쓸 수 없으므로 기존 테스트 앱을 제거한 뒤 확인합니다.
 
 ## 로드맵
