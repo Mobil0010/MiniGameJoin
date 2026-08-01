@@ -319,7 +319,7 @@ Android 앱의 홈 화면에만 `앱 설정` 버튼이 표시됩니다. 일반 �
 | Application ID | `com.mobil0010.minigamejoin` |
 | 최소 Android 버전 | API 28 / Android 9 |
 | Target SDK | API 36 |
-| 현재 앱 버전 | `1.0.0` (`versionCode` 1) |
+| 현재 앱 버전 | `1.0.1` (`versionCode` 2) |
 | 웹 앱 주소 | `https://mini-gamejoin.pages.dev/` |
 | 화면 방향 | 고정하지 않음 |
 | 휴대폰·태블릿 | 동일 반응형 웹 UI 사용 |
@@ -359,7 +359,7 @@ Android 앱은 JavaScript 브리지 `MiniGameJoinNative`와 사용자 정의 이
   "android": {
     "latestVersionCode": 2,
     "latestVersionName": "1.1.0",
-    "minimumVersionCode": 1,
+    "minimumVersionCode": 2,
     "title": "새 업데이트가 있습니다",
     "message": "새 기능과 안정성 개선이 포함되었습니다.",
     "updateUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest",
@@ -372,6 +372,7 @@ Android 앱은 JavaScript 브리지 `MiniGameJoinNative`와 사용자 정의 이
 
 - `latestVersionCode`가 설치된 앱보다 크면 업데이트 안내를 표시합니다.
 - `minimumVersionCode`가 설치된 앱보다 크면 나중에 버튼이 없는 필수 업데이트가 됩니다.
+- 필수 업데이트 대상 Android 앱은 웹 화면에서도 한 번 더 차단되므로 APK 설치 전에는 게임을 조작할 수 없습니다.
 - 안내창에는 현재 설치 버전과 GitHub 배포 버전을 함께 표시합니다.
 - 업데이트 버튼을 누르면 `apkUrl`의 GitHub Release APK를 Android DownloadManager가 내려받습니다.
 - 다운로드가 끝나면 완료 알림을 표시하고, 사용자가 알림을 누르면 Android 시스템 설치 화면을 엽니다.
