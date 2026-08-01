@@ -15,6 +15,9 @@ import type { OnlineUser } from './types'
 interface OnlineChatPanelProps {
   roomCode: string
   user: OnlineUser
+  isOpen: boolean
+  onClose: () => void
+  onUnreadChange: (hasUnread: boolean) => void
 }
 
 function formatMessageTime(value: string): string {
@@ -27,6 +30,9 @@ function formatMessageTime(value: string): string {
 function OnlineChatPanel({
   roomCode,
   user,
+  isOpen,
+  onClose,
+  onUnreadChange,
 }: OnlineChatPanelProps) {
   const [messages, setMessages] = useState<RealtimeChatMessage[]>([])
   const [message, setMessage] = useState('')
@@ -35,6 +41,8 @@ function OnlineChatPanel({
   const [connectionMessage, setConnectionMessage] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const lastSeenMessageIdRef = useRef<string | null>(null)
+  const isMessageBaselineReadyRef = useRef(false)
 
   const appendMessage = (nextMessage: RealtimeChatMessage) => {
     setMessages((current) => {
@@ -109,6 +117,42 @@ function OnlineChatPanel({
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    const latestMessage = messages.at(-1)
+
+    if (isLoading) {
+      return
+    }
+
+    if (!isMessageBaselineReadyRef.current) {
+      isMessageBaselineReadyRef.current = true
+      lastSeenMessageIdRef.current = latestMessage?.id ?? null
+      return
+    }
+
+    if (!latestMessage) {
+      return
+    }
+
+    if (isOpen) {
+      lastSeenMessageIdRef.current = latestMessage.id
+      onUnreadChange(false)
+      return
+    }
+
+    const lastSeenIndex = messages.findIndex(
+      (item) => item.id === lastSeenMessageIdRef.current,
+    )
+    const newMessages =
+      lastSeenIndex >= 0 ? messages.slice(lastSeenIndex + 1) : [latestMessage]
+
+    if (newMessages.some((item) => item.senderId !== user.id)) {
+      onUnreadChange(true)
+    } else {
+      lastSeenMessageIdRef.current = latestMessage.id
+    }
+  }, [isLoading, isOpen, messages, onUnreadChange, user.id])
+
   const submitMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const text = message.trim()
@@ -142,6 +186,14 @@ function OnlineChatPanel({
       className="online-chat-panel"
       aria-label="게임 채팅"
     >
+      <button
+        className="mobile-chat-close"
+        type="button"
+        aria-label="채팅 닫기"
+        onClick={onClose}
+      >
+        ×
+      </button>
       <div className="chat-message-list" aria-live="polite">
         {isLoading ? (
           <p className="chat-state-message">채팅을 불러오는 중…</p>

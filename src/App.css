@@ -1057,6 +1057,11 @@
   box-shadow: 0 24px 70px rgba(17, 24, 39, 0.25);
 }
 
+.mobile-chat-close,
+.mobile-chat-toggle {
+  display: none;
+}
+
 .chat-message-list {
   padding: 14px 16px;
   display: flex;
@@ -1170,6 +1175,22 @@
 .online-game-actions .danger-action {
   color: #b12f3a;
   background: #fff0f1;
+}
+
+.chat-unread-badge {
+  position: absolute;
+  top: -8px;
+  right: -7px;
+  padding: 3px 6px;
+  color: #fff;
+  background: #e53945;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.4px;
+  box-shadow: 0 4px 10px rgba(229, 57, 69, 0.32);
 }
 
 .account-delete-backdrop {
@@ -2411,10 +2432,93 @@
 @media (max-width: 760px) {
   .yacht-layout {
     grid-template-columns: 1fr;
-    grid-template-areas:
-      'play-board'
-      'player-one'
-      'player-two';
+    grid-template-areas: none;
+  }
+
+  .yacht-layout .play-panel {
+    grid-area: auto;
+    order: 1;
+  }
+
+  .yacht-layout .score-panel {
+    grid-area: auto;
+    order: 3;
+  }
+
+  .yacht-layout .score-panel-active {
+    margin-top: 12px;
+    order: 2;
+  }
+
+  .online-game-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .online-game-actions .mobile-chat-toggle {
+    position: relative;
+    display: block;
+    color: var(--color-primary-dark);
+    background: var(--color-primary-soft);
+  }
+
+  .online-chat-section {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    width: 100%;
+    margin: 0;
+    padding: max(14px, env(safe-area-inset-top)) 14px
+      max(14px, env(safe-area-inset-bottom));
+    display: grid;
+    place-items: center;
+    background: rgba(17, 24, 39, 0.58);
+    backdrop-filter: blur(5px);
+    transition:
+      opacity 160ms ease,
+      visibility 160ms ease;
+  }
+
+  .online-chat-section-closed {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .online-chat-section-open {
+    visibility: visible;
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  .online-chat-section .online-chat-panel {
+    width: min(100%, 500px);
+    height: min(72dvh, 540px);
+    max-height: 100%;
+    border-radius: 18px;
+    box-shadow: 0 28px 90px rgba(17, 24, 39, 0.42);
+  }
+
+  .mobile-chat-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    color: #5f6778;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 25px;
+    line-height: 1;
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.12);
+  }
+
+  .online-chat-section .chat-message-list {
+    padding-top: 50px;
   }
 
 }
@@ -2470,8 +2574,9 @@
     min-width: calc(50% - 7px);
   }
 
-  .online-chat-panel {
-    height: 320px;
+  .online-chat-section .online-chat-panel {
+    width: 100%;
+    height: min(72dvh, 500px);
   }
 
   .account-modal {

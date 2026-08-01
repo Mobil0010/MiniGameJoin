@@ -8,6 +8,7 @@ import DiceBoard from '../../games/yacht-dice/components/DiceBoard'
 import RollButton from '../../games/yacht-dice/components/RollButton'
 import ScoreBoard from '../../games/yacht-dice/components/ScoreBoard'
 import YachtCelebration from '../../games/yacht-dice/components/YachtCelebration'
+import { isAndroidNativeApp } from '../../platform/nativeApp'
 import {
   calculateScore,
   calculateScoreSummary,
@@ -32,6 +33,7 @@ import type { OnlineRoom, OnlineUser } from './types'
 
 const CELEBRATION_DURATION_MS = 3000
 const HEARTBEAT_INTERVAL_MS = 15000
+const MOBILE_LAYOUT_MEDIA_QUERY = '(max-width: 760px)'
 
 interface OnlineYachtGameProps {
   room: OnlineRoom
@@ -42,6 +44,22 @@ interface OnlineYachtGameProps {
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query)
+    const updateMatches = (event: MediaQueryListEvent) => setMatches(event.matches)
+
+    setMatches(mediaQuery.matches)
+    mediaQuery.addEventListener('change', updateMatches)
+
+    return () => mediaQuery.removeEventListener('change', updateMatches)
+  }, [query])
+
+  return matches
 }
 
 function OnlineYachtGame({
@@ -62,6 +80,10 @@ function OnlineYachtGame({
   const [errorMessage, setErrorMessage] = useState('')
   const [showExitDialog, setShowExitDialog] = useState(false)
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false)
+  const [hasUnreadChat, setHasUnreadChat] = useState(false)
+  const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_MEDIA_QUERY)
+  const isChatVisible = !isMobileLayout || isMobileChatOpen
   const celebrationTimerRef = useRef<number | null>(null)
   const lastCelebratedVersionRef = useRef<number | null>(null)
   const pageExitRequestRef = useRef<Awaited<
@@ -144,7 +166,7 @@ function OnlineYachtGame({
   }, [heldStateKey, room.dice])
 
   useEffect(() => {
-    if (room.status !== 'playing') {
+    if (room.status !== 'playing' || isAndroidNativeApp()) {
       return
     }
 
@@ -158,7 +180,7 @@ function OnlineYachtGame({
   }, [room.status])
 
   useEffect(() => {
-    if (room.status !== 'playing') {
+    if (room.status !== 'playing' || isAndroidNativeApp()) {
       pageExitRequestRef.current = null
       return
     }
@@ -183,7 +205,7 @@ function OnlineYachtGame({
   }, [room, user.id])
 
   useEffect(() => {
-    if (room.status !== 'playing') {
+    if (room.status !== 'playing' || isAndroidNativeApp()) {
       return
     }
 
@@ -449,6 +471,23 @@ function OnlineYachtGame({
               />
               <div className="online-game-actions">
                 <button
+                  className="mobile-chat-toggle"
+                  type="button"
+                  aria-expanded={isMobileChatOpen}
+                  aria-controls="online-game-chat"
+                  onClick={() => {
+                    setIsMobileChatOpen(true)
+                    setHasUnreadChat(false)
+                  }}
+                >
+                  채팅
+                  {hasUnreadChat && (
+                    <span className="chat-unread-badge" aria-label="새 메시지">
+                      NEW
+                    </span>
+                  )}
+                </button>
+                <button
                   className="danger-action"
                   type="button"
                   disabled={isSubmitting}
@@ -485,8 +524,26 @@ function OnlineYachtGame({
         })}
       </section>
 
-      <div className="online-chat-section">
-        <OnlineChatPanel roomCode={room.code} user={user} />
+      <div
+        className={`online-chat-section ${
+          isChatVisible
+            ? 'online-chat-section-open'
+            : 'online-chat-section-closed'
+        }`}
+        id="online-game-chat"
+        onMouseDown={(event) => {
+          if (isMobileLayout && event.target === event.currentTarget) {
+            setIsMobileChatOpen(false)
+          }
+        }}
+      >
+        <OnlineChatPanel
+          roomCode={room.code}
+          user={user}
+          isOpen={isChatVisible}
+          onClose={() => setIsMobileChatOpen(false)}
+          onUnreadChange={setHasUnreadChat}
+        />
       </div>
     </div>
   )

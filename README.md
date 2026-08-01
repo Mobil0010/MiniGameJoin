@@ -12,6 +12,7 @@
     <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white" />
     <img alt="AWS" src="https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonwebservices&logoColor=white" />
     <img alt="Cloudflare Pages" src="https://img.shields.io/badge/Cloudflare-Pages-F38020?logo=cloudflare&logoColor=white" />
+    <img alt="Android" src="https://img.shields.io/badge/Android-WebView-3DDC84?logo=android&logoColor=white" />
   </p>
 </div>
 
@@ -29,6 +30,7 @@
 - [전체 아키텍처](#전체-아키텍처)
 - [기술 스택](#기술-스택)
 - [프론트엔드 설계](#프론트엔드-설계)
+- [Android 앱](#android-앱)
 - [백엔드 설계](#백엔드-설계)
 - [인증과 권한](#인증과-권한)
 - [온라인 게임 동기화](#온라인-게임-동기화)
@@ -40,6 +42,7 @@
 - [테스트와 품질 검사](#테스트와-품질-검사)
 - [AWS 백엔드 배포](#aws-백엔드-배포)
 - [Cloudflare Pages 배포](#cloudflare-pages-배포)
+- [Android 앱 빌드와 배포](#android-앱-빌드와-배포)
 - [문제 해결](#문제-해결)
 - [로드맵](#로드맵)
 
@@ -57,6 +60,7 @@ MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 �
 - 회원뿐 아니라 가입하지 않은 게스트도 온라인 플레이 가능
 - 주사위 결과와 점수 계산을 서버에서 검증하는 안전한 온라인 게임
 - 새로운 미니게임을 독립된 기능 단위로 추가할 수 있는 구조
+- 동일한 웹 게임을 Android 휴대폰과 태블릿에서도 실행할 수 있는 WebView 앱
 
 ## 현재 제공 기능
 
@@ -71,6 +75,17 @@ MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 �
 - Yacht 달성 시 3초 동안 축하 오버레이 표시
 - 주사위 굴림 2D 애니메이션
 - 확정 점수와 선택 가능한 점수를 시각적으로 구분
+
+### Android 앱 공통 기능
+
+- Cloudflare Pages에 배포된 웹 게임을 네이티브 `WebView`에서 실행
+- 휴대폰, 태블릿, 화면 회전 및 멀티 윈도우 대응
+- 앱 시작 시 `app-update.json`을 확인하여 새 버전 안내
+- 선택 업데이트와 취소할 수 없는 필수 업데이트 구분
+- 동일 도메인은 앱 내부에서, 외부 링크와 APK 다운로드는 외부 앱에서 열기
+- 오프라인 및 페이지 로딩 실패 시 재시도 화면 제공
+- Android 뒤로가기와 웹 게임의 기권 확인 흐름 연동
+- 앱 강제 종료 시 서버 heartbeat 만료를 통한 온라인 경기 이탈 판정
 
 ### Yacht Dice 로컬 모드
 
@@ -145,6 +160,8 @@ MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 �
 ```mermaid
 flowchart LR
     Browser["React 웹 클라이언트"] --> Pages["Cloudflare Pages"]
+    Android["Android WebView 앱"] --> Pages
+    Android --> UpdateManifest["app-update.json"]
     Browser --> UserPool["Amazon Cognito User Pool"]
     Browser --> IdentityPool["Amazon Cognito Identity Pool"]
     IdentityPool --> STS["AWS STS 임시 자격 증명"]
@@ -169,6 +186,7 @@ flowchart LR
 5. AppSync Resolver가 요청 필드명, 인자, 사용자 identity를 Lambda에 전달합니다.
 6. Lambda가 참가자 권한, 턴, 방 버전, 점수 조건을 검증합니다.
 7. 검증된 결과만 DynamoDB에 저장되고 GraphQL 응답으로 반환됩니다.
+8. Android 앱은 Cloudflare Pages의 동일한 React 빌드를 WebView에 표시하고 네이티브 기능이 필요할 때만 Java 브리지를 사용합니다.
 
 ## 기술 스택
 
@@ -213,6 +231,17 @@ flowchart LR
 | Cloudflare Pages | 프론트엔드 빌드, CDN 배포, Git push 자동 배포 |
 | PowerShell | Lambda 배포 ZIP 생성 자동화 |
 
+### Android
+
+| 기술 | 역할 |
+|---|---|
+| Android SDK | 휴대폰·태블릿용 네이티브 앱 실행 환경 |
+| Java | WebView, 업데이트 확인, 네트워크 오류 및 앱 생명주기 처리 |
+| Android WebView | Cloudflare Pages에 배포된 React 앱 표시 |
+| Gradle Kotlin DSL | Android 의존성, SDK 버전, APK 빌드 구성 |
+| AndroidX AppCompat | Activity와 최신 Android 호환 UI 기반 |
+| JUnit | 업데이트 버전 판정 로직 단위 테스트 |
+
 ## 프론트엔드 설계
 
 ### 페이지 라우팅
@@ -249,6 +278,76 @@ Yacht Dice의 규칙 코드는 화면 컴포넌트와 분리되어 있습니다.
 - `OnlineChatPanel.tsx`: 채팅 내역과 입력 UI
 - `MatchHistoryDialog.tsx`: 전적 목록과 상세 점수
 - `MemberProfileDialog.tsx`: 닉네임과 이메일 변경
+- `platform/nativeApp.ts`: Android WebView 브리지 감지와 네이티브 앱 환경 구분
+
+## Android 앱
+
+Android 버전은 웹 코드를 복제한 별도 화면이 아니라, Cloudflare Pages에 배포된 MiniGameJoin을 Android `WebView`에서 실행하는 얇은 네이티브 셸입니다. 따라서 일반적인 게임 화면과 CSS 수정은 웹 저장소에 push한 뒤 Cloudflare 배포가 끝나면 앱에도 바로 반영됩니다.
+
+반면 앱 아이콘, Android 권한, WebView 보안 설정, 네이티브 뒤로가기, 앱 버전과 같은 기능은 APK를 새로 빌드하고 사용자가 업데이트해야 반영됩니다.
+
+### 현재 앱 설정
+
+| 설정 | 값 |
+|---|---|
+| Application ID | `com.mobil0010.minigamejoin` |
+| 최소 Android 버전 | API 28 / Android 9 |
+| Target SDK | API 36 |
+| 현재 앱 버전 | `1.0.0` (`versionCode` 1) |
+| 웹 앱 주소 | `https://mini-gamejoin.pages.dev/` |
+| 화면 방향 | 고정하지 않음 |
+| 휴대폰·태블릿 | 동일 반응형 웹 UI 사용 |
+
+Android Studio 프로젝트는 현재 웹 저장소와 별도로 관리합니다. 기본 로컬 프로젝트 위치는 다음과 같습니다.
+
+```text
+C:\Android_Studio\minigamejoin
+```
+
+Android 소스까지 GitHub에서 함께 관리하려면 별도 저장소를 만들거나, 추후 이 저장소의 `android/` 디렉터리로 옮긴 뒤 빌드 경로를 조정해야 합니다.
+
+### WebView 보안 정책
+
+- HTTPS 주소만 앱 내부에서 로드합니다.
+- HTTP 평문 통신과 혼합 콘텐츠를 차단합니다.
+- WebView의 파일 시스템 및 콘텐츠 URI 접근을 차단합니다.
+- 동일한 MiniGameJoin 호스트의 링크만 WebView 내부에서 엽니다.
+- 외부 웹사이트, Play Store 및 APK 다운로드는 Android 외부 앱으로 전달합니다.
+- 웹 디버깅은 디버그 빌드에서만 허용합니다.
+
+### 웹과 네이티브의 생명주기 연동
+
+Android 앱은 JavaScript 브리지 `MiniGameJoinNative`와 사용자 정의 이벤트를 통해 웹에 앱 실행 환경과 생명주기 상태를 알립니다.
+
+- 네이티브 앱에서는 브라우저의 일반적인 `pagehide`만으로 즉시 기권 요청을 보내지 않습니다.
+- Android 뒤로가기는 WebView 방문 기록을 먼저 이동합니다.
+- 앱 종료 또는 강제 종료처럼 웹 요청을 보장할 수 없는 경우 서버의 heartbeat 만료가 최종 판정을 담당합니다.
+- 온라인 승패와 기권 판정은 Android 클라이언트가 아니라 Lambda와 DynamoDB 상태를 기준으로 처리합니다.
+
+### 업데이트 확인 구조
+
+앱을 시작하면 현재 웹 주소의 `/app-update.json`을 조회합니다. 원본 파일은 웹 저장소의 `public/app-update.json`이며 Cloudflare 빌드 후 사이트 루트에 배포됩니다.
+
+```json
+{
+  "android": {
+    "latestVersionCode": 2,
+    "latestVersionName": "1.1.0",
+    "minimumVersionCode": 1,
+    "title": "새 업데이트가 있습니다",
+    "message": "새 기능과 안정성 개선이 포함되었습니다.",
+    "updateUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest"
+  }
+}
+```
+
+- `latestVersionCode`가 설치된 앱보다 크면 업데이트 안내를 표시합니다.
+- `minimumVersionCode`가 설치된 앱보다 크면 나중에 버튼이 없는 필수 업데이트가 됩니다.
+- 업데이트 버튼은 `updateUrl`을 외부 브라우저 또는 Play Store로 엽니다.
+- Android 보안 정책상 일반 웹 앱이 사용자 동의 없이 APK를 자동 설치할 수는 없습니다.
+- 업데이트 JSON을 읽지 못해도 게임 실행은 막지 않고 기존 버전으로 계속 접속합니다.
+
+웹 기능만 수정했다면 앱 버전을 올릴 필요가 없습니다. 네이티브 코드를 변경해 새 APK를 배포할 때만 `versionCode`, `versionName`, 업데이트 JSON을 함께 변경합니다.
 
 ## 백엔드 설계
 
@@ -501,6 +600,7 @@ type RoomStatus =
 ```text
 MiniGameJoin/
 ├─ public/
+│  ├─ app-update.json
 │  ├─ favicon.svg
 │  └─ icons.svg
 ├─ src/
@@ -527,6 +627,8 @@ MiniGameJoin/
 │  │  ├─ YachtModePage.tsx
 │  │  ├─ YachtDicePage.tsx
 │  │  └─ YachtOnlinePage.tsx
+│  ├─ platform/
+│  │  └─ nativeApp.ts
 │  ├─ App.tsx
 │  ├─ App.css
 │  └─ main.tsx
@@ -747,6 +849,68 @@ git push origin master
 
 `master` 이외 브랜치는 Cloudflare Preview Deployment로 검증한 뒤 병합할 수 있습니다.
 
+## Android 앱 빌드와 배포
+
+### 개발 환경
+
+- Android Studio 최신 안정 버전
+- Android SDK Platform 36
+- JDK 17
+- 인터넷 연결이 가능한 Android 9 이상 기기 또는 에뮬레이터
+
+Android Studio에서 `C:\Android_Studio\minigamejoin`을 열고 Gradle 동기화를 완료합니다. 실행 기기를 선택한 다음 상단의 Run 버튼을 누르면 디버그 앱을 설치할 수 있습니다.
+
+명령줄에서는 Android 프로젝트 루트에서 다음 명령을 사용합니다.
+
+```powershell
+.\gradlew.bat testDebugUnitTest
+.\gradlew.bat lintDebug
+.\gradlew.bat assembleDebug
+```
+
+생성되는 테스트용 APK:
+
+```text
+app\build\outputs\apk\debug\app-debug.apk
+```
+
+디버그 APK는 개발 기기에서 기능을 확인하기 위한 파일입니다. 사용자에게 정식으로 배포할 때는 디버그 APK를 사용하지 않고 release 빌드를 서명해야 합니다.
+
+### 새 네이티브 버전 배포 순서
+
+1. Android 프로젝트의 `app/build.gradle.kts`에서 `versionCode`를 반드시 증가시킵니다.
+2. 사용자에게 표시할 `versionName`도 변경합니다.
+3. 단위 테스트, lint 및 release 빌드를 실행합니다.
+4. 본인 소유의 Android Keystore로 release APK 또는 AAB를 서명합니다.
+5. GitHub Releases 또는 Google Play Console에 새 설치 파일을 업로드합니다.
+6. 웹 저장소의 `public/app-update.json`에 새 버전과 다운로드 주소를 기록합니다.
+7. 웹 변경사항을 `master`에 push하고 Cloudflare Pages 배포를 확인합니다.
+8. 실제 기기의 이전 버전 앱을 실행하여 업데이트 안내와 이동 주소를 검증합니다.
+
+`versionCode`는 Android가 새 버전 여부를 판별하는 정수이므로 이전 배포보다 항상 커야 합니다. `versionName`은 사용자에게 보이는 문자열입니다.
+
+### 선택 업데이트와 필수 업데이트
+
+일반적인 기능 개선은 `latestVersionCode`만 올려 사용자가 나중에 업데이트할 수 있도록 합니다.
+
+```json
+{
+  "latestVersionCode": 2,
+  "minimumVersionCode": 1
+}
+```
+
+보안 문제나 더 이상 호환되지 않는 구버전을 차단해야 할 때만 `minimumVersionCode`를 올립니다.
+
+```json
+{
+  "latestVersionCode": 3,
+  "minimumVersionCode": 3
+}
+```
+
+필수 업데이트는 사용자가 앱에 진입하지 못하게 할 수 있으므로 새 APK 다운로드와 설치가 정상 작동하는 것을 확인한 뒤 적용해야 합니다.
+
 ## 문제 해결
 
 ### Cloudflare에서 `npm ci`가 실패하는 경우
@@ -808,6 +972,32 @@ GraphQL URL 앞부분과 AppSync `apiId`가 서로 다를 수 있습니다.
 - 시크릿 창에서 확인
 - Cloudflare 배포가 최신 Git 커밋인지 확인
 
+### Android 앱이 흰 화면을 표시하는 경우
+
+1. 기기 브라우저에서 `https://mini-gamejoin.pages.dev/`가 열리는지 확인합니다.
+2. Android Studio Logcat에서 `MiniGameJoin` 또는 `WebView` 오류를 확인합니다.
+3. Cloudflare Pages의 최신 배포가 성공했는지 확인합니다.
+4. 앱의 인터넷 권한과 기기 네트워크 연결을 확인합니다.
+5. 사이트 인증서가 정상이고 HTTPS로 제공되는지 확인합니다.
+
+### Android 업데이트 안내가 나오지 않는 경우
+
+브라우저에서 다음 주소를 직접 열어 JSON이 반환되는지 확인합니다.
+
+```text
+https://mini-gamejoin.pages.dev/app-update.json
+```
+
+사이트 HTML이 표시된다면 `public/app-update.json`이 아직 GitHub와 Cloudflare에 배포되지 않은 상태입니다. JSON이 표시되더라도 `latestVersionCode`가 설치된 앱의 `versionCode`보다 커야 안내가 나타납니다.
+
+### APK는 설치되지만 업데이트 설치가 실패하는 경우
+
+- 기존 앱과 새 APK가 같은 Application ID인지 확인합니다.
+- 두 APK가 같은 Keystore로 서명되었는지 확인합니다.
+- 새 APK의 `versionCode`가 기존 앱보다 큰지 확인합니다.
+- GitHub Releases의 `updateUrl`이 실제 APK 파일 또는 다운로드 페이지를 가리키는지 확인합니다.
+- 디버그 서명 앱 위에 다른 release 서명 앱을 덮어쓸 수 없으므로 기존 테스트 앱을 제거한 뒤 확인합니다.
+
 ## 로드맵
 
 ### 게임
@@ -833,6 +1023,15 @@ GraphQL URL 앞부분과 AppSync `apiId`가 서로 다를 수 있습니다.
 - DynamoDB 사용량 및 비용 모니터링
 - CI에서 lint, test, build 자동 검사
 - 접근성 및 모바일 UX 개선
+
+### Android 앱
+
+- 정식 release Keystore와 서명 설정
+- GitHub Releases 또는 Google Play 내부 테스트 배포
+- 앱 업데이트 다운로드 진행 상태 표시
+- 네트워크 연결 복구 시 자동 재시도 개선
+- 푸시 알림과 게임 초대 딥 링크
+- Android 휴대폰·태블릿 실기기 호환성 테스트 확대
 
 ## Git 작업 흐름
 
