@@ -4,6 +4,7 @@ import {
   useState,
 } from 'react'
 import { Link } from 'react-router'
+import { isAndroidNativeApp, shareAndroidInvite } from '../platform/nativeApp'
 import {
   confirmMemberEmailChange,
   confirmMemberPasswordReset,
@@ -978,6 +979,15 @@ function YachtOnlinePage() {
             <span>ROOM CODE</span>
             <strong>{room.code}</strong>
             <p>이 코드를 친구에게 공유해 같은 게임방에 입장하세요.</p>
+            {isAndroidNativeApp() && (
+              <button
+                className="native-share-invite-button"
+                type="button"
+                onClick={() => shareAndroidInvite(room.code)}
+              >
+                Android로 초대 공유
+              </button>
+            )}
           </div>
 
           <div className="room-members">

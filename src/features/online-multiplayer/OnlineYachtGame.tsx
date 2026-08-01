@@ -8,7 +8,11 @@ import DiceBoard from '../../games/yacht-dice/components/DiceBoard'
 import RollButton from '../../games/yacht-dice/components/RollButton'
 import ScoreBoard from '../../games/yacht-dice/components/ScoreBoard'
 import YachtCelebration from '../../games/yacht-dice/components/YachtCelebration'
-import { isAndroidNativeApp } from '../../platform/nativeApp'
+import {
+  isAndroidNativeApp,
+  performAndroidFeedback,
+  setAndroidGameSessionActive,
+} from '../../platform/nativeApp'
 import {
   calculateScore,
   calculateScoreSummary,
@@ -106,6 +110,7 @@ function OnlineYachtGame({
     players.find((player) => player.id === room.activePlayerId) ?? players[0]
   const isMyTurn =
     room.status === 'playing' && room.activePlayerId === user.id
+  const previousIsMyTurnRef = useRef(isMyTurn)
   const displayedDice = (room.dice ?? []).map((die) => ({
     ...die,
     isHeld: heldIndexes.has(die.id),
@@ -149,6 +154,18 @@ function OnlineYachtGame({
     finalPlayers.length > 0
       ? Math.max(...finalPlayers.map((player) => player.total))
       : 0
+
+  useEffect(() => {
+    setAndroidGameSessionActive(room.status === 'playing')
+    return () => setAndroidGameSessionActive(false)
+  }, [room.status])
+
+  useEffect(() => {
+    if (!previousIsMyTurnRef.current && isMyTurn) {
+      performAndroidFeedback('turn')
+    }
+    previousIsMyTurnRef.current = isMyTurn
+  }, [isMyTurn])
 
   useEffect(() => {
     if (lastHeldStateKeyRef.current === heldStateKey) {
@@ -270,6 +287,7 @@ function OnlineYachtGame({
     }
 
     lastCelebratedVersionRef.current = room.version
+    performAndroidFeedback('yacht')
     setShowYachtCelebration(true)
 
     if (celebrationTimerRef.current !== null) {
@@ -287,6 +305,7 @@ function OnlineYachtGame({
       return
     }
 
+    performAndroidFeedback('dice_hold')
     setHeldIndexes((current) => {
       const next = new Set(current)
       if (next.has(dieId)) {
@@ -307,6 +326,7 @@ function OnlineYachtGame({
       return
     }
 
+    performAndroidFeedback('dice_roll')
     setIsSubmitting(true)
     setErrorMessage('')
 
@@ -337,6 +357,7 @@ function OnlineYachtGame({
 
     try {
       onRoomChange(await confirmOnlineScore(room, category))
+      performAndroidFeedback('score_confirm')
       setHeldIndexes(new Set())
     } catch (error) {
       setErrorMessage(

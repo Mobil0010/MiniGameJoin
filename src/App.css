@@ -23,6 +23,37 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.native-app-settings-button,
+.native-share-invite-button {
+  border: 1px solid #d9dcff;
+  background: #f0efff;
+  color: #493ee2;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.native-app-settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border-radius: 12px;
+}
+
+.native-app-settings-button:hover,
+.native-share-invite-button:hover {
+  border-color: #766cff;
+  background: #e4e1ff;
+}
+
 .brand {
   color: var(--color-primary-dark);
   font-size: 20px;
@@ -538,6 +569,12 @@
 .room-code-block p {
   color: var(--color-muted);
   font-size: 12px;
+}
+
+.room-code-block .native-share-invite-button {
+  margin-top: 18px;
+  padding: 10px 16px;
+  border-radius: 12px;
 }
 
 .room-members h2 {

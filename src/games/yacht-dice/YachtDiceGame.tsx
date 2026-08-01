@@ -7,6 +7,10 @@ import { MAX_ROLL_COUNT, SCORE_CATEGORIES } from './constants'
 import { useYachtGame } from './hooks/useYachtGame'
 import { calculateScore } from './logic/calculateScore'
 import type { DiceValue } from './types/yacht'
+import {
+  performAndroidFeedback,
+  setAndroidGameSessionActive,
+} from '../../platform/nativeApp'
 
 const CELEBRATION_DURATION_MS = 3000
 
@@ -44,6 +48,11 @@ function YachtDiceGame() {
   const winners = finalPlayers.filter((player) => player.total === highestTotal)
 
   useEffect(() => {
+    setAndroidGameSessionActive(state.status !== 'finished')
+    return () => setAndroidGameSessionActive(false)
+  }, [state.status])
+
+  useEffect(() => {
     return () => {
       if (celebrationTimerRef.current !== null) {
         window.clearTimeout(celebrationTimerRef.current)
@@ -74,6 +83,7 @@ function YachtDiceGame() {
       return
     }
 
+    performAndroidFeedback('yacht')
     setShowYachtCelebration(true)
 
     if (celebrationTimerRef.current !== null) {

@@ -2,7 +2,19 @@ interface MiniGameJoinNativeBridge {
   isAndroidApp?: () => boolean
   getInstalledVersionName?: () => string
   getInstalledVersionCode?: () => number
+  performFeedback?: (eventName: AndroidFeedbackEvent) => void
+  openSettings?: () => void
+  shareInvite?: (roomCode: string) => void
+  setGameSessionActive?: (active: boolean) => void
 }
+
+export type AndroidFeedbackEvent =
+  | 'dice_roll'
+  | 'dice_hold'
+  | 'score_confirm'
+  | 'yacht'
+  | 'chat'
+  | 'turn'
 
 declare global {
   interface Window {
@@ -30,4 +42,20 @@ export function getAndroidAppVersion(): {
     versionName: bridge.getInstalledVersionName(),
     versionCode: bridge.getInstalledVersionCode(),
   }
+}
+
+export function performAndroidFeedback(eventName: AndroidFeedbackEvent): void {
+  window.MiniGameJoinNative?.performFeedback?.(eventName)
+}
+
+export function openAndroidAppSettings(): void {
+  window.MiniGameJoinNative?.openSettings?.()
+}
+
+export function shareAndroidInvite(roomCode: string): void {
+  window.MiniGameJoinNative?.shareInvite?.(roomCode)
+}
+
+export function setAndroidGameSessionActive(active: boolean): void {
+  window.MiniGameJoinNative?.setGameSessionActive?.(active)
 }

@@ -11,6 +11,7 @@ import {
 } from './appSyncApi'
 import type { RealtimeChatMessage } from './realtimeGateway'
 import type { OnlineUser } from './types'
+import { performAndroidFeedback } from '../../platform/nativeApp'
 
 interface OnlineChatPanelProps {
   roomCode: string
@@ -42,6 +43,7 @@ function OnlineChatPanel({
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const lastSeenMessageIdRef = useRef<string | null>(null)
+  const lastFeedbackMessageIdRef = useRef<string | null>(null)
   const isMessageBaselineReadyRef = useRef(false)
 
   const appendMessage = (nextMessage: RealtimeChatMessage) => {
@@ -127,16 +129,11 @@ function OnlineChatPanel({
     if (!isMessageBaselineReadyRef.current) {
       isMessageBaselineReadyRef.current = true
       lastSeenMessageIdRef.current = latestMessage?.id ?? null
+      lastFeedbackMessageIdRef.current = latestMessage?.id ?? null
       return
     }
 
     if (!latestMessage) {
-      return
-    }
-
-    if (isOpen) {
-      lastSeenMessageIdRef.current = latestMessage.id
-      onUnreadChange(false)
       return
     }
 
@@ -145,8 +142,25 @@ function OnlineChatPanel({
     )
     const newMessages =
       lastSeenIndex >= 0 ? messages.slice(lastSeenIndex + 1) : [latestMessage]
+    const newestOpponentMessage = [...newMessages]
+      .reverse()
+      .find((item) => item.senderId !== user.id)
 
-    if (newMessages.some((item) => item.senderId !== user.id)) {
+    if (
+      newestOpponentMessage &&
+      newestOpponentMessage.id !== lastFeedbackMessageIdRef.current
+    ) {
+      lastFeedbackMessageIdRef.current = newestOpponentMessage.id
+      performAndroidFeedback('chat')
+    }
+
+    if (isOpen) {
+      lastSeenMessageIdRef.current = latestMessage.id
+      onUnreadChange(false)
+      return
+    }
+
+    if (newestOpponentMessage) {
       onUnreadChange(true)
     } else {
       lastSeenMessageIdRef.current = latestMessage.id

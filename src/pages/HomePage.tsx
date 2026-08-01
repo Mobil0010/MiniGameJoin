@@ -1,4 +1,5 @@
 import { Link } from 'react-router'
+import NativeAppSettingsButton from '../components/NativeAppSettingsButton'
 
 function HomePage() {
   return (
@@ -7,7 +8,10 @@ function HomePage() {
         <Link className="brand" to="/">
           MiniGameJoin
         </Link>
-        <span className="header-copy">웹 미니게임 모음</span>
+        <div className="header-actions">
+          <span className="header-copy">웹 미니게임 모음</span>
+          <NativeAppSettingsButton />
+        </div>
       </header>
 
       <section className="home-hero">

@@ -17,6 +17,7 @@ import {
   updatePlayerNickname,
 } from '../logic/gameState'
 import { rollDice } from '../logic/rollDice'
+import { performAndroidFeedback } from '../../../platform/nativeApp'
 import type {
   DiceValue,
   ScoreCard,
@@ -107,6 +108,7 @@ export function useYachtGame(): UseYachtGameResult {
 
     rollingRef.current = true
     setIsRolling(true)
+    performAndroidFeedback('dice_roll')
 
     rollTimerRef.current = window.setTimeout(() => {
       setState((current) => ({
@@ -122,9 +124,15 @@ export function useYachtGame(): UseYachtGameResult {
   }
 
   const toggleHold = (dieId: number) => {
-    if (isRolling) {
+    if (
+      isRolling ||
+      state.status !== 'playing' ||
+      state.rollCount === 0
+    ) {
       return
     }
+
+    performAndroidFeedback('dice_hold')
 
     setState((current) => {
       if (current.status !== 'playing' || current.rollCount === 0) {
@@ -141,9 +149,16 @@ export function useYachtGame(): UseYachtGameResult {
   }
 
   const selectScore = (category: ScoreCategory) => {
-    if (isRolling) {
+    if (
+      isRolling ||
+      state.status !== 'playing' ||
+      state.rollCount === 0 ||
+      activePlayer.scores[category] !== undefined
+    ) {
       return
     }
+
+    performAndroidFeedback('score_confirm')
 
     setState((current) => {
       return submitActivePlayerScore(current, category)
