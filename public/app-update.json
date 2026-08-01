@@ -1,7 +1,7 @@
 {
   "android": {
-    "latestVersionCode": 1,
-    "latestVersionName": "1.0.0",
+    "latestVersionCode": 2,
+    "latestVersionName": "1.0.1",
     "minimumVersionCode": 1,
     "title": "새 업데이트가 있습니다",
     "message": "더 안정적인 플레이를 위해 MiniGameJoin을 최신 버전으로 업데이트해 주세요.",
