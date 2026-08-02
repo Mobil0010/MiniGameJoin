@@ -18,6 +18,7 @@ import {
 } from '../logic/gameState'
 import { rollDice } from '../logic/rollDice'
 import { performAndroidFeedback } from '../../../platform/nativeApp'
+import { playGameSound } from '../../../audio/gameAudio'
 import type {
   DiceValue,
   ScoreCard,
@@ -109,6 +110,7 @@ export function useYachtGame(): UseYachtGameResult {
     rollingRef.current = true
     setIsRolling(true)
     performAndroidFeedback('dice_roll')
+    playGameSound('dice_roll')
 
     rollTimerRef.current = window.setTimeout(() => {
       setState((current) => ({
@@ -133,6 +135,7 @@ export function useYachtGame(): UseYachtGameResult {
     }
 
     performAndroidFeedback('dice_hold')
+    playGameSound('dice_hold')
 
     setState((current) => {
       if (current.status !== 'playing' || current.rollCount === 0) {
@@ -159,6 +162,7 @@ export function useYachtGame(): UseYachtGameResult {
     }
 
     performAndroidFeedback('score_confirm')
+    playGameSound('score_confirm')
 
     setState((current) => {
       return submitActivePlayerScore(current, category)

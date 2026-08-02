@@ -11,6 +11,7 @@ import {
   performAndroidFeedback,
   setAndroidGameSessionActive,
 } from '../../platform/nativeApp'
+import { playGameSound } from '../../audio/gameAudio'
 
 const CELEBRATION_DURATION_MS = 3000
 
@@ -32,6 +33,7 @@ function YachtDiceGame() {
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
   const celebrationTimerRef = useRef<number | null>(null)
   const lastCheckedRollRef = useRef('')
+  const previousActivePlayerIdRef = useRef(activePlayer.id)
 
   const isFinished = state.status === 'finished'
   const round = Math.min(
@@ -51,6 +53,13 @@ function YachtDiceGame() {
     setAndroidGameSessionActive(state.status !== 'finished')
     return () => setAndroidGameSessionActive(false)
   }, [state.status])
+
+  useEffect(() => {
+    if (previousActivePlayerIdRef.current !== activePlayer.id) {
+      playGameSound('turn')
+      previousActivePlayerIdRef.current = activePlayer.id
+    }
+  }, [activePlayer.id])
 
   useEffect(() => {
     return () => {
@@ -84,6 +93,7 @@ function YachtDiceGame() {
     }
 
     performAndroidFeedback('yacht')
+    playGameSound('yacht')
     setShowYachtCelebration(true)
 
     if (celebrationTimerRef.current !== null) {

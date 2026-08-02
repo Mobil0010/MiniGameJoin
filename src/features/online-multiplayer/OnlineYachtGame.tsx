@@ -34,6 +34,7 @@ import {
 import OnlineChatPanel from './OnlineChatPanel'
 import OnlineMatchExitDialog from './OnlineMatchExitDialog'
 import type { OnlineRoom, OnlineUser } from './types'
+import { playGameSound } from '../../audio/gameAudio'
 
 const CELEBRATION_DURATION_MS = 3000
 const HEARTBEAT_INTERVAL_MS = 15000
@@ -81,6 +82,8 @@ function OnlineYachtGame({
       ),
   )
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRollingDice, setIsRollingDice] = useState(false)
+  const [isRemoteDiceRolling, setIsRemoteDiceRolling] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [showExitDialog, setShowExitDialog] = useState(false)
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
@@ -89,6 +92,9 @@ function OnlineYachtGame({
   const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_MEDIA_QUERY)
   const isChatVisible = !isMobileLayout || isMobileChatOpen
   const celebrationTimerRef = useRef<number | null>(null)
+  const remoteRollTimerRef = useRef<number | null>(null)
+  const previousRollSnapshotRef = useRef('')
+  const localRollSnapshotRef = useRef<string | null>(null)
   const lastCelebratedVersionRef = useRef<number | null>(null)
   const pageExitRequestRef = useRef<Awaited<
     ReturnType<typeof prepareOnlineForfeitOnPageExit>
@@ -116,6 +122,11 @@ function OnlineYachtGame({
     isHeld: heldIndexes.has(die.id),
   }))
   const diceValues = displayedDice.map((die) => die.value)
+  const roomRollSnapshot = `${room.activePlayerId ?? ''}:${room.rollCount ?? 0}:${(
+    room.dice ?? []
+  )
+    .map((die) => `${die.id}-${die.value ?? 0}`)
+    .join(',')}`
   const hasCompleteDice =
     displayedDice.length === 5 &&
     diceValues.every((value) => value !== null)
@@ -163,6 +174,7 @@ function OnlineYachtGame({
   useEffect(() => {
     if (!previousIsMyTurnRef.current && isMyTurn) {
       performAndroidFeedback('turn')
+      playGameSound('turn')
     }
     previousIsMyTurnRef.current = isMyTurn
   }, [isMyTurn])
@@ -273,8 +285,41 @@ function OnlineYachtGame({
       if (celebrationTimerRef.current !== null) {
         window.clearTimeout(celebrationTimerRef.current)
       }
+      if (remoteRollTimerRef.current !== null) {
+        window.clearTimeout(remoteRollTimerRef.current)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    const previousSnapshot = previousRollSnapshotRef.current
+    previousRollSnapshotRef.current = roomRollSnapshot
+
+    if (localRollSnapshotRef.current === roomRollSnapshot) {
+      localRollSnapshotRef.current = null
+      return
+    }
+
+    if (
+      previousSnapshot === '' ||
+      previousSnapshot === roomRollSnapshot ||
+      room.status !== 'playing' ||
+      (room.rollCount ?? 0) < 1 ||
+      !hasCompleteDice
+    ) {
+      return
+    }
+
+    setIsRemoteDiceRolling(true)
+    playGameSound('dice_roll')
+    if (remoteRollTimerRef.current !== null) {
+      window.clearTimeout(remoteRollTimerRef.current)
+    }
+    remoteRollTimerRef.current = window.setTimeout(() => {
+      setIsRemoteDiceRolling(false)
+      remoteRollTimerRef.current = null
+    }, ROLL_ANIMATION_MS)
+  }, [hasCompleteDice, room.status, room.rollCount, roomRollSnapshot])
 
   useEffect(() => {
     if (
@@ -288,6 +333,7 @@ function OnlineYachtGame({
 
     lastCelebratedVersionRef.current = room.version
     performAndroidFeedback('yacht')
+    playGameSound('yacht')
     setShowYachtCelebration(true)
 
     if (celebrationTimerRef.current !== null) {
@@ -306,6 +352,7 @@ function OnlineYachtGame({
     }
 
     performAndroidFeedback('dice_hold')
+    playGameSound('dice_hold')
     setHeldIndexes((current) => {
       const next = new Set(current)
       if (next.has(dieId)) {
@@ -327,7 +374,9 @@ function OnlineYachtGame({
     }
 
     performAndroidFeedback('dice_roll')
+    playGameSound('dice_roll')
     setIsSubmitting(true)
+    setIsRollingDice(true)
     setErrorMessage('')
 
     try {
@@ -335,6 +384,11 @@ function OnlineYachtGame({
         rollOnlineDice(room, [...heldIndexes]),
         wait(ROLL_ANIMATION_MS),
       ])
+      localRollSnapshotRef.current = `${nextRoom.activePlayerId ?? ''}:${
+        nextRoom.rollCount ?? 0
+      }:${(nextRoom.dice ?? [])
+        .map((die) => `${die.id}-${die.value ?? 0}`)
+        .join(',')}`
       onRoomChange(nextRoom)
     } catch (error) {
       setErrorMessage(
@@ -343,6 +397,7 @@ function OnlineYachtGame({
           : '주사위를 굴리지 못했습니다.',
       )
     } finally {
+      setIsRollingDice(false)
       setIsSubmitting(false)
     }
   }
@@ -358,6 +413,7 @@ function OnlineYachtGame({
     try {
       onRoomChange(await confirmOnlineScore(room, category))
       performAndroidFeedback('score_confirm')
+      playGameSound('score_confirm')
       setHeldIndexes(new Set())
     } catch (error) {
       setErrorMessage(
@@ -473,7 +529,7 @@ function OnlineYachtGame({
                 disabled={
                   !isMyTurn || (room.rollCount ?? 0) === 0 || isSubmitting
                 }
-                isRolling={isSubmitting}
+                isRolling={isRollingDice || isRemoteDiceRolling}
                 onToggleHold={toggleHold}
               />
               <p className="game-guide" aria-live="polite">
@@ -487,7 +543,7 @@ function OnlineYachtGame({
                   isSubmitting ||
                   (room.rollCount ?? 0) >= MAX_ROLL_COUNT
                 }
-                isRolling={isSubmitting}
+                isRolling={isRollingDice}
                 onRoll={roll}
               />
               <div className="online-game-actions">

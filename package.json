@@ -14,17 +14,20 @@
     "@aws-crypto/sha256-browser": "^5.2.0",
     "@aws-sdk/client-cognito-identity": "^3.1098.0",
     "@aws-sdk/client-sts": "^3.1098.0",
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@smithy/protocol-http": "^5.5.16",
     "@smithy/signature-v4": "^5.6.12",
     "amazon-cognito-identity-js": "^6.3.20",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router": "^8.3.0"
+    "react-router": "^8.3.0",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.3",
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",

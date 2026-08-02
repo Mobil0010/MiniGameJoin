@@ -6,7 +6,7 @@ import type {
 
 export const DICE_COUNT = 5
 export const MAX_ROLL_COUNT = 3
-export const ROLL_ANIMATION_MS = 760
+export const ROLL_ANIMATION_MS = 1200
 
 export const UPPER_BONUS_THRESHOLD = 63
 export const UPPER_BONUS_SCORE = 30

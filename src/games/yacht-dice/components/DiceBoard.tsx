@@ -1,5 +1,8 @@
-import Dice from './Dice'
-import type { Die } from '../types/yacht'
+import { useEffect, useRef } from 'react'
+import ThreeDiceBoard from './ThreeDiceBoard'
+import { getDiceCombinationAnnouncement } from '../logic/getDiceCombination'
+import type { DiceValue, Die } from '../types/yacht'
+import { playGameSound } from '../../../audio/gameAudio'
 
 export interface DiceBoardProps {
   dice: readonly Die[]
@@ -14,21 +17,47 @@ function DiceBoard({
   isRolling = false,
   onToggleHold,
 }: DiceBoardProps) {
+  const lastSoundKeyRef = useRef('')
+  const diceValues = dice.map((die) => die.value)
+  const hasCompleteDice = diceValues.every(
+    (value): value is DiceValue => value !== null,
+  )
+  const combination =
+    !isRolling && hasCompleteDice
+      ? getDiceCombinationAnnouncement(diceValues)
+      : null
+  const diceValueKey = diceValues.join('-')
+
+  useEffect(() => {
+    if (isRolling) {
+      lastSoundKeyRef.current = ''
+      return
+    }
+
+    if (!combination) {
+      return
+    }
+
+    const soundKey = `${combination}:${diceValueKey}`
+    if (lastSoundKeyRef.current === soundKey) {
+      return
+    }
+
+    lastSoundKeyRef.current = soundKey
+    playGameSound('combination')
+  }, [combination, diceValueKey, isRolling])
+
   return (
-    <div
-      className="dice-row"
-      aria-label="주사위 영역"
-      aria-busy={isRolling}
-    >
-      {dice.map((die) => (
-        <Dice
-          key={die.id}
-          die={die}
-          disabled={disabled}
-          isRolling={isRolling}
-          onToggleHold={onToggleHold}
-        />
-      ))}
+    <div className="dice-board-stack">
+      <p className="dice-combination-announcement" aria-live="polite">
+        {combination}
+      </p>
+      <ThreeDiceBoard
+        dice={dice}
+        disabled={disabled}
+        isRolling={isRolling}
+        onToggleHold={onToggleHold}
+      />
     </div>
   )
 }
