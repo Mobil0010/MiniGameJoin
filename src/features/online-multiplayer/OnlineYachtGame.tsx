@@ -7,6 +7,7 @@ import {
 import DiceBoard from '../../games/yacht-dice/components/DiceBoard'
 import RollButton from '../../games/yacht-dice/components/RollButton'
 import ScoreBoard from '../../games/yacht-dice/components/ScoreBoard'
+import CombinedScoreBoard from '../../games/yacht-dice/components/CombinedScoreBoard'
 import YachtCelebration from '../../games/yacht-dice/components/YachtCelebration'
 import {
   isAndroidNativeApp,
@@ -467,6 +468,20 @@ function OnlineYachtGame({
         />
       )}
       <section className="yacht-layout" aria-label="온라인 Yacht Dice 게임">
+        <CombinedScoreBoard
+          players={players}
+          activePlayerId={room.activePlayerId ?? ''}
+          previewScores={previewScores}
+          playerSummaries={playerSummaries}
+          round={round}
+          canSelectActive={
+            room.status === 'playing' && isMyTurn && !isSubmitting
+          }
+          canEditNicknames={false}
+          onSelectScore={selectScore}
+          onNicknameChange={() => undefined}
+        />
+
         <div className="panel play-panel" aria-busy={isSubmitting}>
           {showYachtCelebration && (
             <YachtCelebration

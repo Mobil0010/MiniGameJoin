@@ -20,6 +20,8 @@ const BOARD_HALF_DEPTH = 1.72
 const FLOOR_TOP = 0
 const SETTLE_DURATION_MS = 430
 const FIXED_TIMESTEP = 1 / 60
+const BASE_CAMERA_FOV = 31
+const BASE_CAMERA_ASPECT = 45 / 14
 
 const SLOT_X = [-3.65, -1.82, 0, 1.82, 3.65]
 
@@ -311,7 +313,12 @@ export async function createDice3DScene({
   const scene: Scene = new three.Scene()
   scene.fog = new three.Fog(0xedf1f7, 11.5, 20)
 
-  const camera: PerspectiveCamera = new three.PerspectiveCamera(31, 45 / 14, 0.1, 40)
+  const camera: PerspectiveCamera = new three.PerspectiveCamera(
+    BASE_CAMERA_FOV,
+    BASE_CAMERA_ASPECT,
+    0.1,
+    40,
+  )
   const rollingCameraPosition = new three.Vector3(0, 7.5, 8.2)
   const overviewCameraPosition = new three.Vector3(0, 6.6, 0.01)
   const cameraTarget = new three.Vector3(0, 0.15, 0)
@@ -682,9 +689,18 @@ export async function createDice3DScene({
       return
     }
     const isCompact = window.matchMedia('(max-width: 760px)').matches
+    const nextAspect = bounds.width / bounds.height
+    const baseHalfFov = three.MathUtils.degToRad(BASE_CAMERA_FOV / 2)
+    const fittedVerticalFov = three.MathUtils.radToDeg(
+      2 *
+        Math.atan(
+          (Math.tan(baseHalfFov) * BASE_CAMERA_ASPECT) / nextAspect,
+        ),
+    )
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isCompact ? 1.45 : 1.85))
     renderer.setSize(bounds.width, bounds.height, false)
-    camera.aspect = bounds.width / bounds.height
+    camera.aspect = nextAspect
+    camera.fov = Math.max(BASE_CAMERA_FOV, fittedVerticalFov)
     camera.updateProjectionMatrix()
     render()
   }

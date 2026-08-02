@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import DiceBoard from './components/DiceBoard'
+import CombinedScoreBoard from './components/CombinedScoreBoard'
 import RollButton from './components/RollButton'
 import ScoreBoard from './components/ScoreBoard'
 import YachtCelebration from './components/YachtCelebration'
@@ -132,6 +133,17 @@ function YachtDiceGame() {
 
   return (
     <section className="yacht-layout" aria-label="Yacht Dice 게임">
+      <CombinedScoreBoard
+        players={state.players}
+        activePlayerId={activePlayer.id}
+        previewScores={previewScores}
+        playerSummaries={playerSummaries}
+        round={round}
+        canSelectActive={state.status === 'playing' && !isRolling}
+        onSelectScore={selectScore}
+        onNicknameChange={changeNickname}
+      />
+
       <div className="panel play-panel" aria-busy={isRolling}>
         {showYachtCelebration && (
           <YachtCelebration
