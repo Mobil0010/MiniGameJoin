@@ -325,7 +325,7 @@ Android 앱의 홈 화면에만 `앱 설정` 버튼이 표시됩니다. 일반 �
 | Application ID | `com.mobil0010.minigamejoin` |
 | 최소 Android 버전 | API 28 / Android 9 |
 | Target SDK | API 36 |
-| 현재 앱 버전 | `1.0.3` (`versionCode` 4) |
+| 현재 앱 버전 | `1.0.4` (`versionCode` 5) |
 | 웹 앱 주소 | `https://mini-gamejoin.pages.dev/` |
 | 화면 방향 | 고정하지 않음 |
 | 휴대폰·태블릿 | 동일 반응형 웹 UI 사용 |

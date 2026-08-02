@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { getAndroidAppVersion } from '../platform/nativeApp'
+import { isAndroidUpdateRequired } from './androidUpdatePolicy'
 
 interface AndroidUpdateManifest {
   minimumVersionCode: number
@@ -59,7 +60,7 @@ function RequiredAndroidUpdateGate({ children }: RequiredAndroidUpdateGateProps)
         }
 
         setGateState(
-          installedVersion.versionCode < update.minimumVersionCode
+          isAndroidUpdateRequired(installedVersion.versionCode, update.minimumVersionCode)
             ? { status: 'required', update }
             : { status: 'allowed' },
         )
