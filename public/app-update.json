@@ -1,13 +1,13 @@
 {
   "android": {
-    "latestVersionCode": 5,
-    "latestVersionName": "1.0.4",
-    "minimumVersionCode": 5,
+    "latestVersionCode": 6,
+    "latestVersionName": "1.0.5",
+    "minimumVersionCode": 6,
     "title": "필수 업데이트가 있습니다",
-    "message": "MiniGameJoin 1.0.4를 설치해야 게임을 계속 이용할 수 있습니다.",
+    "message": "MiniGameJoin 1.0.5를 설치해야 게임을 계속 이용할 수 있습니다.",
     "updateUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest",
     "releasePageUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/latest",
-    "apkUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/download/v1.0.4/MiniGameJoin.apk",
-    "apkSha256": "DE27A33A8474A9BFA41C58AE05626DB5102B9514484174197D47C05405568B46"
+    "apkUrl": "https://github.com/Mobil0010/MiniGameJoin/releases/download/v1.0.5/MiniGameJoin.apk",
+    "apkSha256": "6BFCD04435360D667C23CE08E877A4B582238C9F3468DC2935027440F72C4448"
   }
 }
