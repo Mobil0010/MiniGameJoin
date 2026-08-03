@@ -1,6 +1,6 @@
 # MiniGameJoin serverless backend
 
-온라인 Yacht Dice 서버에서 사용하는 AppSync 스키마와 Lambda 코드입니다.
+온라인 Yacht Dice와 가위바위보 서버에서 사용하는 AppSync 스키마와 Lambda 코드입니다.
 
 ## 구성
 
@@ -20,6 +20,7 @@ ROOMS_TABLE=MiniGameJoinRooms
 MATCHES_TABLE=MiniGameJoinMatches
 CHAT_MESSAGES_TABLE=MiniGameJoinChatMessages
 PLAYER_MATCHES_TABLE=MiniGameJoinPlayerMatches
+GAME_STATS_TABLE=MiniGameJoinGameStats
 COGNITO_USER_POOL_ID=ap-northeast-2_wKEL9hhbQ
 COGNITO_APP_CLIENT_ID=5icj3sfkbd83t6fdpuas69damg
 COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
@@ -30,8 +31,11 @@ COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
 - 회원 ID는 AppSync의 `identity.sub`, 게스트 ID는 검증된
   `identity.cognitoIdentityId`를 사용합니다.
 - 주사위 값과 점수는 Lambda에서 계산합니다.
+- 가위바위보 선택은 공개 전까지 비공개 방 필드에 저장하고 서버에서 판정합니다.
+- 가위바위보 제한시간이 끝나면 미선택 플레이어의 손을 서버에서 무작위 선택합니다.
 - 방 상태 변경에는 `version` 조건을 사용해 중복 요청을 차단합니다.
 - 경기 결과와 회원 전적은 DynamoDB 트랜잭션으로 함께 기록합니다.
+- 게임별 누적 전적은 `userId + gameId` 키로 분리해 새 게임도 같은 구조로 추가합니다.
 - 게스트가 참가한 경기는 회원 전적에 반영하지 않습니다.
 - 채팅은 방 참가자만 읽고 쓸 수 있으며 7일 TTL로 정리합니다.
 - 진행 중인 방은 heartbeat와 90초 유예시간으로 접속 종료를 판정합니다.

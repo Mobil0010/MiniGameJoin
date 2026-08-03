@@ -29,6 +29,7 @@ import {
   ensureOnlineProfile,
   getOnlineRoom,
   getOnlineProfile,
+  getMyGameStats,
   isAppSyncConfigured,
   isGuestOnlineConfigured,
   joinOnlineRoom,
@@ -36,9 +37,11 @@ import {
   selectOnlinePlayers,
   setOnlineReady,
   startOnlineGame,
+  updateOnlineRpsSettings,
   updateOnlineNickname,
 } from '../features/online-multiplayer/appSyncApi'
 import OnlineYachtGame from '../features/online-multiplayer/OnlineYachtGame'
+import OnlineRpsGame from '../features/online-multiplayer/OnlineRpsGame'
 import OnlineChatPanel from '../features/online-multiplayer/OnlineChatPanel'
 import FriendsPanel from '../features/online-multiplayer/FriendsPanel'
 import {
@@ -47,14 +50,16 @@ import {
 } from '../features/online-multiplayer/guestAwsAuth'
 import { normalizeRoomCodeInput } from '../features/online-multiplayer/roomCodeInput'
 import {
-  calculateMemberWinRate,
   clearPrototypeUser,
   loadPrototypeUser,
   persistPrototypeUser,
 } from '../features/online-multiplayer/prototype'
 import type {
   OnlineRoom,
+  OnlineGameId,
+  OnlineGameStats,
   OnlineUser,
+  RpsSettings,
 } from '../features/online-multiplayer/types'
 
 type AuthView =
@@ -81,6 +86,7 @@ function YachtOnlinePage() {
   const [isLobbySubmitting, setIsLobbySubmitting] = useState(false)
   const [showMemberProfile, setShowMemberProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
+  const [currentGameStats, setCurrentGameStats] = useState<OnlineGameStats | null>(null)
   const [profileError, setProfileError] = useState('')
   const [profileNotice, setProfileNotice] = useState('')
   const [pendingEmailChange, setPendingEmailChange] = useState('')
@@ -88,13 +94,13 @@ function YachtOnlinePage() {
     null,
   )
   const [selectedOnlineGameId, setSelectedOnlineGameId] = useState<
-    'yacht-dice' | null
+    OnlineGameId | null
   >(null)
   const appSyncConfigured = isAppSyncConfigured()
   const guestOnlineConfigured = isGuestOnlineConfigured()
   const isOnlineMatchVisible =
     room?.status === 'playing' || room?.status === 'finished'
-  const isYachtDiceSelected = selectedOnlineGameId === 'yacht-dice'
+  const isOnlineGameSelected = selectedOnlineGameId !== null
   const currentRoomParticipant = room?.players.find(
     (player) => player.userId === user?.id,
   )
@@ -103,6 +109,26 @@ function YachtOnlinePage() {
     room?.players
       .filter((player) => player.isPlaying)
       .sort((left, right) => (left.slot ?? 99) - (right.slot ?? 99)) ?? []
+
+  useEffect(() => {
+    let active = true
+    if (
+      user?.kind !== 'member' ||
+      !selectedOnlineGameId ||
+      room?.status === 'playing'
+    ) {
+      setCurrentGameStats(null)
+      return () => { active = false }
+    }
+    void getMyGameStats(selectedOnlineGameId)
+      .then((stats) => {
+        if (active) setCurrentGameStats(stats)
+      })
+      .catch(() => {
+        if (active) setCurrentGameStats(null)
+      })
+    return () => { active = false }
+  }, [room?.status, selectedOnlineGameId, user?.id, user?.kind])
 
   useEffect(() => {
     if (
@@ -414,11 +440,11 @@ function YachtOnlinePage() {
     setNotice('')
 
     try {
-      setRoom(
-        await createOnlineRoom(
-          user.kind === 'guest' ? user.nickname : undefined,
-        ),
-      )
+      if (!selectedOnlineGameId) return
+      setRoom(await createOnlineRoom(
+        selectedOnlineGameId,
+        user.kind === 'guest' ? user.nickname : undefined,
+      ))
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -446,12 +472,12 @@ function YachtOnlinePage() {
     setNotice('')
 
     try {
-      setRoom(
-        await joinOnlineRoom(
+      const nextRoom = await joinOnlineRoom(
           joinCode,
           user.kind === 'guest' ? user.nickname : undefined,
-        ),
-      )
+        )
+      setSelectedOnlineGameId(nextRoom.gameId)
+      setRoom(nextRoom)
     } catch (error) {
       setNotice(
         error instanceof Error
@@ -470,7 +496,9 @@ function YachtOnlinePage() {
     setIsLobbySubmitting(true)
     setNotice('')
     try {
-      setRoom(await joinOnlineRoom(roomCode))
+      const nextRoom = await joinOnlineRoom(roomCode)
+      setSelectedOnlineGameId(nextRoom.gameId)
+      setRoom(nextRoom)
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : '초대받은 방에 참가하지 못했습니다.',
@@ -729,6 +757,23 @@ function YachtOnlinePage() {
     }
   }
 
+  const updateRpsRule = async (patch: Partial<RpsSettings>) => {
+    if (!room?.rpsSettings || !isCurrentUserRoomHost) return
+    setIsLobbySubmitting(true)
+    setNotice('')
+    try {
+      setRoom(await updateOnlineRpsSettings(room, {
+        ...room.rpsSettings,
+        ...patch,
+      }))
+      setNotice('규칙을 변경했습니다. 참가자들은 다시 준비해 주세요.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '규칙을 변경하지 못했습니다.')
+    } finally {
+      setIsLobbySubmitting(false)
+    }
+  }
+
   const startGame = async () => {
     if (!room || !user) {
       return
@@ -779,7 +824,7 @@ function YachtOnlinePage() {
       )}
       {showMatchHistory && user?.kind === 'member' && (
         <MatchHistoryDialog
-          user={user}
+          initialGameId={selectedOnlineGameId ?? 'yacht-dice'}
           onClose={() => setShowMatchHistory(false)}
         />
       )}
@@ -795,7 +840,7 @@ function YachtOnlinePage() {
             <Link className="brand" to="/">
               MiniGameJoin
             </Link>
-            {isYachtDiceSelected && !room ? (
+            {isOnlineGameSelected && !room ? (
               <button
                 className="back-link header-back-button"
                 type="button"
@@ -821,12 +866,14 @@ function YachtOnlinePage() {
             <div>
               <p className="eyebrow">ONLINE MULTIPLAYER</p>
               <h1>
-                {isYachtDiceSelected
+                {selectedOnlineGameId === 'yacht-dice'
                   ? 'Yacht Dice 온라인 로비'
-                  : '웹 멀티플레이'}
+                  : selectedOnlineGameId === 'rock-paper-scissors'
+                    ? '가위바위보 온라인 로비'
+                    : '웹 멀티플레이'}
               </h1>
               <p>
-                {isYachtDiceSelected
+                {isOnlineGameSelected
                   ? '방을 만들거나 초대 코드로 참가해 친구와 게임을 시작하세요.'
                   : '로그인 또는 게스트 입장 후 플레이할 온라인 게임을 선택하세요.'}
               </p>
@@ -1105,7 +1152,7 @@ function YachtOnlinePage() {
             )}
           </div>
         </section>
-      ) : !isYachtDiceSelected ? (
+      ) : !isOnlineGameSelected ? (
         <section className="online-game-catalog">
           <div className="lobby-profile">
             <div>
@@ -1128,10 +1175,10 @@ function YachtOnlinePage() {
 
           <div className="section-title">
             <h2>온라인 게임 목록</h2>
-            <span>1개 플레이 가능</span>
+            <span>2개 플레이 가능 · 1개 준비 중</span>
           </div>
 
-          <div className="game-grid single-game-grid">
+          <div className="game-grid">
             <button
               className="game-card game-card-ready online-game-card"
               type="button"
@@ -1153,15 +1200,59 @@ function YachtOnlinePage() {
               </div>
               <strong>온라인 로비 입장 →</strong>
             </button>
+
+            <button
+              className="game-card game-card-ready online-game-card"
+              type="button"
+              onClick={() => {
+                setSelectedOnlineGameId('rock-paper-scissors')
+                setNotice('')
+              }}
+            >
+              <span className="game-icon" aria-hidden="true">
+                ✌
+              </span>
+              <div>
+                <span className="badge">2~6명 실시간</span>
+                <h3>가위바위보</h3>
+                <p>
+                  토너먼트 또는 전체 난투전으로 동시에 손을 골라 승부합니다.
+                </p>
+              </div>
+              <strong>온라인 로비 입장 →</strong>
+            </button>
+
+            <article className="game-card game-card-soon">
+              <span className="game-icon" aria-hidden="true">
+                ?
+              </span>
+              <div>
+                <span className="badge">준비 중</span>
+                <h3>스피드 퀴즈</h3>
+                <p>
+                  친구와 제한 시간 안에 문제를 맞히는 온라인 퀴즈 게임입니다.
+                </p>
+              </div>
+              <strong>추후 제공 예정</strong>
+            </article>
           </div>
         </section>
       ) : room && isOnlineMatchVisible ? (
-        <OnlineYachtGame
-          room={room}
-          user={user}
-          onRoomChange={setRoom}
-          onReturnToLobby={returnToLobby}
-        />
+        room.gameId === 'rock-paper-scissors' ? (
+          <OnlineRpsGame
+            room={room}
+            user={user}
+            onRoomChange={setRoom}
+            onReturnToLobby={returnToLobby}
+          />
+        ) : (
+          <OnlineYachtGame
+            room={room}
+            user={user}
+            onRoomChange={setRoom}
+            onReturnToLobby={returnToLobby}
+          />
+        )
       ) : room ? (
         <section className="room-waiting">
           <div className="room-code-block">
@@ -1179,18 +1270,95 @@ function YachtOnlinePage() {
             )}
           </div>
 
+          {room.gameId === 'rock-paper-scissors' && room.rpsSettings && (
+            <div className="rps-settings-card">
+              <div className="room-members-heading">
+                <div>
+                  <p className="eyebrow">GAME RULES</p>
+                  <h2>가위바위보 규칙</h2>
+                </div>
+                <span>{isCurrentUserRoomHost ? '방장 설정' : '규칙 확인'}</span>
+              </div>
+              <div className="rps-settings-grid">
+                <label>
+                  게임 방식
+                  <select
+                    value={room.rpsSettings.mode}
+                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
+                    onChange={(event) => void updateRpsRule({
+                      mode: event.target.value as RpsSettings['mode'],
+                    })}
+                  >
+                    <option value="tournament">1:1 토너먼트</option>
+                    <option value="all-play">전체 난투전</option>
+                  </select>
+                </label>
+                <label>
+                  선택 제한시간
+                  <select
+                    value={room.rpsSettings.timeLimitSeconds}
+                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
+                    onChange={(event) => void updateRpsRule({
+                      timeLimitSeconds: Number(event.target.value) as RpsSettings['timeLimitSeconds'],
+                    })}
+                  >
+                    {[5, 10, 15, 20].map((seconds) => (
+                      <option value={seconds} key={seconds}>{seconds}초</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {room.rpsSettings.mode === 'tournament' ? '경기 승리 조건' : '플레이어 생명'}
+                  <select
+                    value={room.rpsSettings.winsRequired}
+                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
+                    onChange={(event) => void updateRpsRule({
+                      winsRequired: Number(event.target.value) as RpsSettings['winsRequired'],
+                    })}
+                  >
+                    {[1, 2, 3].map((count) => (
+                      <option value={count} key={count}>
+                        {room.rpsSettings?.mode === 'tournament'
+                          ? `${count}승 선취`
+                          : `${count}개`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  방 정원
+                  <select
+                    value={room.rpsSettings.maxPlayers}
+                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
+                    onChange={(event) => void updateRpsRule({
+                      maxPlayers: Number(event.target.value) as RpsSettings['maxPlayers'],
+                    })}
+                  >
+                    {[2, 3, 4, 5, 6].map((count) => (
+                      <option value={count} key={count}>{count}명</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p>
+                시간 안에 고르지 않으면 자동으로 무작위 손이 선택됩니다.
+                규칙을 바꾸면 모든 참가자의 준비가 해제됩니다.
+              </p>
+            </div>
+          )}
+
           <div className="room-members">
             <div className="room-members-heading">
               <h2>참가자</h2>
-              <span>{room.players.length} / 4</span>
+              <span>{room.players.length} / {room.maxPlayers}</span>
             </div>
             <p className="room-role-guide">
-              방장과 첫 입장자는 자동으로 플레이어가 되고, 이후 참가자는
-              관전합니다. 진행 중 입장한 참가자는 현재 경기에서 관전자로
-              고정됩니다.
+              {room.gameId === 'rock-paper-scissors'
+                ? '게임 시작 전 참가자는 모두 플레이합니다. 진행 중 들어온 참가자는 현재 게임을 관전합니다.'
+                : '방장과 첫 입장자는 자동으로 플레이어가 되고, 이후 참가자는 관전합니다. 진행 중 입장한 참가자는 현재 경기에서 관전자로 고정됩니다.'}
             </p>
             <div className="room-member-grid">
-              {Array.from({ length: 4 }, (_, index) => {
+              {Array.from({ length: room.maxPlayers }, (_, index) => {
                 const participant = room.players[index]
                 if (!participant) {
                   return (
@@ -1229,7 +1397,7 @@ function YachtOnlinePage() {
                           : '준비 중'
                         : '관전 대기'}
                     </small>
-                    {isCurrentUserRoomHost && (
+                    {isCurrentUserRoomHost && room.gameId === 'yacht-dice' && (
                       <button
                         type="button"
                         disabled={isLobbySubmitting}
@@ -1289,7 +1457,9 @@ function YachtOnlinePage() {
                 disabled={
                   isLobbySubmitting ||
                   room.status === 'playing' ||
-                  selectedRoomPlayers.length !== 2 ||
+                  (room.gameId === 'yacht-dice'
+                    ? selectedRoomPlayers.length !== 2
+                    : selectedRoomPlayers.length < 2) ||
                   !selectedRoomPlayers.every((player) => player.isReady)
                 }
                 onClick={startGame}
@@ -1364,21 +1534,27 @@ function YachtOnlinePage() {
             </div>
           </div>
 
-          {user.kind === 'member' && user.stats ? (
-            <section className="member-stats" aria-label="회원 전적">
+          {user.kind === 'member' ? currentGameStats ? (
+            <section className="member-stats" aria-label={`${selectedOnlineGameId} 회원 전적`}>
               <div>
                 <span>승리</span>
-                <strong>{user.stats.wins}</strong>
+                <strong>{currentGameStats.wins}</strong>
               </div>
               <div>
                 <span>패배</span>
-                <strong>{user.stats.losses}</strong>
+                <strong>{currentGameStats.losses}</strong>
+              </div>
+              <div>
+                <span>무승부</span>
+                <strong>{currentGameStats.draws}</strong>
               </div>
               <div>
                 <span>승률</span>
-                <strong>{calculateMemberWinRate(user)}%</strong>
+                <strong>{currentGameStats.winRate}%</strong>
               </div>
             </section>
+          ) : (
+            <p className="guest-stats-notice">게임별 전적을 불러오는 중…</p>
           ) : (
             <p className="guest-stats-notice">
               게스트 경기 결과는 계정 전적에 저장되지 않습니다.

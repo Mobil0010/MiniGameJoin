@@ -111,7 +111,7 @@ function OnlineYachtGame({
       room.players.filter((player) => player.isPlaying).map((player, index) => ({
         id: player.userId,
         nickname: player.nickname,
-        slot: player.slot ?? ((index + 1) as 1 | 2),
+        slot: (player.slot ?? index + 1) as 1 | 2,
         scores: player.scores ?? {},
       })),
     [room.players],

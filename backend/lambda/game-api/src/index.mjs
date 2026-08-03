@@ -19,12 +19,20 @@ import {
   createInitialDice,
   rollServerDice,
 } from './game.mjs'
+import {
+  RPS_HANDS,
+  normalizeRpsSettings,
+  resolveRpsSelections,
+  shuffleIds,
+  takeNextTournamentMatch,
+} from './rps.mjs'
 
 const USERS_TABLE = process.env.USERS_TABLE
 const ROOMS_TABLE = process.env.ROOMS_TABLE
 const MATCHES_TABLE = process.env.MATCHES_TABLE
 const CHAT_MESSAGES_TABLE = process.env.CHAT_MESSAGES_TABLE
 const PLAYER_MATCHES_TABLE = process.env.PLAYER_MATCHES_TABLE
+const GAME_STATS_TABLE = process.env.GAME_STATS_TABLE
 const FRIENDS_TABLE = process.env.FRIENDS_TABLE
 const COGNITO_IDENTITY_POOL_ID = process.env.COGNITO_IDENTITY_POOL_ID
 const ROOM_CODE_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -36,7 +44,8 @@ const DEFAULT_CHAT_LIMIT = 50
 const DEFAULT_HISTORY_LIMIT = 20
 const MAX_QUERY_LIMIT = 50
 const ONLINE_WINDOW_SECONDS = 75
-const MAX_ROOM_PARTICIPANTS = 4
+const MAX_ROOM_PARTICIPANTS = 6
+const RPS_REVEAL_MILLISECONDS = 2500
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -44,6 +53,7 @@ for (const [name, value] of Object.entries({
   MATCHES_TABLE,
   CHAT_MESSAGES_TABLE,
   PLAYER_MATCHES_TABLE,
+  GAME_STATS_TABLE,
   FRIENDS_TABLE,
   COGNITO_IDENTITY_POOL_ID,
 })) {
@@ -68,6 +78,14 @@ function nowEpochSeconds() {
 
 function normalizeRoomCode(value) {
   return String(value ?? '').trim().toUpperCase()
+}
+
+function normalizeGameId(value) {
+  const gameId = String(value ?? '').trim()
+  if (!['yacht-dice', 'rock-paper-scissors'].includes(gameId)) {
+    throw new Error('지원하지 않는 게임 전적입니다.')
+  }
+  return gameId
 }
 
 function normalizeNickname(value) {
@@ -135,6 +153,20 @@ function getMatchResult(userId, winnerId) {
   }
 
   return winnerId === userId ? 'win' : 'loss'
+}
+
+function toGameStatsResponse(gameId, stats = {}) {
+  const wins = stats.wins ?? 0
+  const losses = stats.losses ?? 0
+  const draws = stats.draws ?? 0
+  const completed = wins + losses + draws
+  return {
+    gameId,
+    wins,
+    losses,
+    draws,
+    winRate: completed === 0 ? 0 : Math.round((wins / completed) * 1000) / 10,
+  }
 }
 
 function requireIdentity(event) {
@@ -262,7 +294,7 @@ async function getProfiles(userIds) {
       RequestItems: {
         [USERS_TABLE]: {
           Keys: uniqueIds.map((userId) => ({ userId })),
-          ProjectionExpression: 'userId, nickname, lastSeenAt',
+          ProjectionExpression: 'userId, nickname, lastSeenAt, wins, losses',
         },
       },
     }),
@@ -274,6 +306,32 @@ async function getProfiles(userIds) {
       profile,
     ]),
   )
+}
+
+async function myGameStats(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  const gameId = normalizeGameId(event.arguments.gameId)
+  if (isGuest) {
+    return toGameStatsResponse(gameId)
+  }
+
+  const result = await documentClient.send(new GetCommand({
+    TableName: GAME_STATS_TABLE,
+    Key: { userId, gameId },
+    ConsistentRead: true,
+  }))
+  if (result.Item) {
+    return toGameStatsResponse(gameId, result.Item)
+  }
+
+  if (gameId === 'yacht-dice') {
+    const profile = await getProfile(userId)
+    return toGameStatsResponse(gameId, {
+      wins: profile.wins ?? 0,
+      losses: profile.losses ?? 0,
+    })
+  }
+  return toGameStatsResponse(gameId)
 }
 
 async function listFriendRelations(userId) {
@@ -558,7 +616,15 @@ async function getRoom(roomCode) {
     throw new Error('게임방을 찾을 수 없습니다.')
   }
 
-  return result.Item
+  return {
+    ...result.Item,
+    maxPlayers: result.Item.maxPlayers ?? 4,
+    rpsCurrentPlayerIds: result.Item.rpsCurrentPlayerIds ?? [],
+    rpsSubmittedPlayerIds: result.Item.rpsSubmittedPlayerIds ?? [],
+    rpsRevealedSelections: result.Item.rpsRevealedSelections ?? [],
+    rpsPlayerStates: result.Item.rpsPlayerStates ?? [],
+    rpsRoundWinnerIds: result.Item.rpsRoundWinnerIds ?? [],
+  }
 }
 
 async function putVersionedRoom(room, expectedVersion) {
@@ -711,6 +777,28 @@ async function deleteMyProfile(event) {
     exclusiveStartKey = history.LastEvaluatedKey
   } while (exclusiveStartKey)
 
+  exclusiveStartKey = undefined
+  do {
+    const stats = await documentClient.send(new QueryCommand({
+      TableName: GAME_STATS_TABLE,
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': userId },
+      ProjectionExpression: 'userId, gameId',
+      Limit: 25,
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    if ((stats.Items ?? []).length > 0) {
+      await documentClient.send(new BatchWriteCommand({
+        RequestItems: {
+          [GAME_STATS_TABLE]: stats.Items.map((item) => ({
+            DeleteRequest: { Key: { userId: item.userId, gameId: item.gameId } },
+          })),
+        },
+      }))
+    }
+    exclusiveStartKey = stats.LastEvaluatedKey
+  } while (exclusiveStartKey)
+
   const friendRelations = await listFriendRelations(userId)
   await Promise.all(
     friendRelations.map((relation) =>
@@ -728,11 +816,199 @@ async function deleteMyProfile(event) {
   return true
 }
 
+function rpsDeadline(seconds) {
+  return new Date(Date.now() + seconds * 1000).toISOString()
+}
+
+function createRpsSelectingState(room, currentPlayerIds, extra = {}) {
+  return {
+    ...room,
+    ...extra,
+    rpsPhase: 'selecting',
+    rpsCurrentPlayerIds: currentPlayerIds,
+    rpsSubmittedPlayerIds: [],
+    rpsRevealedSelections: [],
+    rpsRoundWinnerIds: [],
+    rpsRoundDeadline: rpsDeadline(room.rpsSettings.timeLimitSeconds),
+    rpsRevealEndsAt: undefined,
+    _rpsSelections: {},
+  }
+}
+
+function createInitialRpsGame(room, gamePlayers) {
+  const settings = normalizeRpsSettings(room.rpsSettings)
+  const playerIds = gamePlayers.map((player) => player.userId)
+  const baseRoom = {
+    ...room,
+    status: 'playing',
+    rpsSettings: settings,
+    rpsRound: 1,
+    rpsTournamentRound: 1,
+    rpsPlayerStates: playerIds.map((userId) => ({
+      userId,
+      wins: 0,
+      lives: settings.mode === 'allPlay' ? settings.winsRequired : 1,
+      eliminated: false,
+    })),
+    _rpsPendingIds: [],
+    _rpsAdvancerIds: [],
+    _rpsMatchWinnerId: undefined,
+    _rpsGameWinnerId: undefined,
+  }
+
+  if (settings.mode === 'allPlay') {
+    return createRpsSelectingState(baseRoom, playerIds)
+  }
+
+  const nextMatch = takeNextTournamentMatch(shuffleIds(playerIds), [])
+  return createRpsSelectingState(baseRoom, nextMatch.currentPlayerIds, {
+    _rpsPendingIds: nextMatch.pendingIds,
+    _rpsAdvancerIds: nextMatch.advancerIds,
+  })
+}
+
+function revealRpsRound(room, fillMissing = false) {
+  const selections = { ...(room._rpsSelections ?? {}) }
+  for (const playerId of room.rpsCurrentPlayerIds ?? []) {
+    if (!selections[playerId] && fillMissing) {
+      selections[playerId] = RPS_HANDS[randomInt(0, RPS_HANDS.length)]
+    }
+  }
+  const revealedSelections = (room.rpsCurrentPlayerIds ?? []).map((userId) => ({
+    userId,
+    hand: selections[userId],
+  }))
+  if (revealedSelections.some(({ hand }) => !hand)) {
+    return room
+  }
+
+  const result = resolveRpsSelections(revealedSelections)
+  let playerStates = room.rpsPlayerStates ?? []
+  let matchWinnerId
+  let gameWinnerId
+
+  if (!result.isDraw && room.rpsSettings.mode === 'tournament') {
+    const roundWinnerId = result.winnerIds[0]
+    playerStates = playerStates.map((state) =>
+      state.userId === roundWinnerId
+        ? { ...state, wins: state.wins + 1 }
+        : state,
+    )
+    if (
+      playerStates.find((state) => state.userId === roundWinnerId)?.wins >=
+      room.rpsSettings.winsRequired
+    ) {
+      matchWinnerId = roundWinnerId
+    }
+  } else if (!result.isDraw) {
+    playerStates = playerStates.map((state) => {
+      if (!result.loserIds.includes(state.userId)) {
+        return state
+      }
+      const lives = Math.max(0, state.lives - 1)
+      return { ...state, lives, eliminated: lives === 0 }
+    })
+    const survivors = playerStates.filter((state) => !state.eliminated)
+    if (survivors.length === 1) {
+      gameWinnerId = survivors[0].userId
+    }
+  }
+
+  return {
+    ...room,
+    rpsPhase: 'revealing',
+    rpsSubmittedPlayerIds: Object.keys(selections),
+    rpsRevealedSelections: revealedSelections,
+    rpsRoundWinnerIds: result.winnerIds,
+    rpsPlayerStates: playerStates,
+    rpsRoundDeadline: undefined,
+    rpsRevealEndsAt: new Date(Date.now() + RPS_REVEAL_MILLISECONDS).toISOString(),
+    _rpsSelections: selections,
+    _rpsMatchWinnerId: matchWinnerId,
+    _rpsGameWinnerId: gameWinnerId,
+  }
+}
+
+function advanceRevealedRpsRound(room) {
+  if (room._rpsGameWinnerId) {
+    return {
+      ...room,
+      status: 'finished',
+      winnerId: room._rpsGameWinnerId,
+      finishReason: 'completed',
+      resultRecorded: true,
+      rpsRevealEndsAt: undefined,
+    }
+  }
+
+  if (room.rpsSettings.mode === 'allPlay') {
+    const survivors = (room.rpsPlayerStates ?? [])
+      .filter((state) => !state.eliminated)
+      .map((state) => state.userId)
+    return createRpsSelectingState(room, survivors, {
+      rpsRound: (room.rpsRound ?? 0) + 1,
+    })
+  }
+
+  if (!room._rpsMatchWinnerId) {
+    return createRpsSelectingState(room, room.rpsCurrentPlayerIds, {
+      rpsRound: (room.rpsRound ?? 0) + 1,
+    })
+  }
+
+  const loserIds = room.rpsCurrentPlayerIds.filter(
+    (userId) => userId !== room._rpsMatchWinnerId,
+  )
+  const playerStates = (room.rpsPlayerStates ?? []).map((state) =>
+    loserIds.includes(state.userId)
+      ? { ...state, eliminated: true }
+      : state,
+  )
+  const nextMatch = takeNextTournamentMatch(
+    room._rpsPendingIds ?? [],
+    [...(room._rpsAdvancerIds ?? []), room._rpsMatchWinnerId],
+  )
+  if (nextMatch.winnerId) {
+    return {
+      ...room,
+      status: 'finished',
+      winnerId: nextMatch.winnerId,
+      finishReason: 'completed',
+      resultRecorded: true,
+      rpsPlayerStates: playerStates,
+      rpsRevealEndsAt: undefined,
+      _rpsGameWinnerId: nextMatch.winnerId,
+    }
+  }
+
+  return createRpsSelectingState(room, nextMatch.currentPlayerIds, {
+    rpsRound: (room.rpsRound ?? 0) + 1,
+    rpsTournamentRound:
+      (room.rpsTournamentRound ?? 1) + (nextMatch.advancedStage ? 1 : 0),
+    rpsPlayerStates: playerStates.map((state) =>
+      nextMatch.currentPlayerIds.includes(state.userId)
+        ? { ...state, wins: 0 }
+        : state,
+    ),
+    _rpsPendingIds: nextMatch.pendingIds,
+    _rpsAdvancerIds: nextMatch.advancerIds,
+    _rpsMatchWinnerId: undefined,
+  })
+}
+
 async function createRoom(event) {
   const { userId, isGuest } = requireIdentity(event)
   const nickname = isGuest
     ? normalizeNickname(event.arguments.guestNickname)
     : (await getProfile(userId)).nickname
+
+  const gameId = String(event.arguments.gameId ?? 'yacht-dice')
+  if (!['yacht-dice', 'rock-paper-scissors'].includes(gameId)) {
+    throw new Error('지원하지 않는 게임입니다.')
+  }
+  const rpsSettings = gameId === 'rock-paper-scissors'
+    ? normalizeRpsSettings()
+    : undefined
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const roomCode = createRoomCode()
@@ -740,7 +1016,8 @@ async function createRoom(event) {
     const epoch = nowEpochSeconds()
     const room = {
       roomCode,
-      gameId: 'yacht-dice',
+      gameId,
+      maxPlayers: gameId === 'rock-paper-scissors' ? rpsSettings.maxPlayers : 4,
       status: 'waiting',
       players: [
         {
@@ -757,6 +1034,12 @@ async function createRoom(event) {
       activePlayerId: null,
       dice: createInitialDice(),
       rollCount: 0,
+      rpsSettings,
+      rpsCurrentPlayerIds: [],
+      rpsSubmittedPlayerIds: [],
+      rpsRevealedSelections: [],
+      rpsPlayerStates: [],
+      rpsRoundWinnerIds: [],
       version: 1,
       lastSeenAt: {
         [userId]: epoch,
@@ -924,20 +1207,24 @@ async function joinRoom(event) {
 
   if (
     !['waiting', 'ready', 'playing'].includes(room.status) ||
-    room.players.length >= MAX_ROOM_PARTICIPANTS
+    room.players.length >= (room.maxPlayers ?? MAX_ROOM_PARTICIPANTS)
   ) {
     throw new Error('입장할 수 없거나 정원이 찬 게임방입니다.')
   }
 
   const epoch = nowEpochSeconds()
   const selectedPlayers = getGamePlayers(room)
-  const joinsAsPlayer =
-    room.status !== 'playing' && selectedPlayers.length < 2
+  const joinsAsPlayer = room.gameId === 'rock-paper-scissors'
+    ? room.status !== 'playing'
+    : room.status !== 'playing' && selectedPlayers.length < 2
   const occupiedSlots = new Set(
     selectedPlayers.map((player) => player.slot).filter(Boolean),
   )
   const assignedSlot = joinsAsPlayer
-    ? [1, 2].find((slot) => !occupiedSlots.has(slot)) ?? 2
+    ? Array.from(
+        { length: room.gameId === 'rock-paper-scissors' ? 6 : 2 },
+        (_, index) => index + 1,
+      ).find((slot) => !occupiedSlots.has(slot)) ?? selectedPlayers.length + 1
     : null
   const nextRoom = {
     ...room,
@@ -1017,7 +1304,9 @@ async function setReady(event) {
   )
   const gamePlayers = getGamePlayers({ ...room, players })
   const isReady =
-    gamePlayers.length === 2 && gamePlayers.every((player) => player.isReady)
+    gamePlayers.length >= 2 &&
+    (room.gameId === 'rock-paper-scissors' || gamePlayers.length === 2) &&
+    gamePlayers.every((player) => player.isReady)
   const nextRoom = {
     ...room,
     players,
@@ -1033,6 +1322,10 @@ async function selectPlayers(event) {
   const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
   const host = requireParticipant(room, userId)
+
+  if (room.gameId !== 'yacht-dice') {
+    throw new Error('가위바위보 방에서는 대기 중인 참가자가 모두 플레이합니다.')
+  }
 
   if (!host.isHost) {
     throw new Error('방장만 게임 플레이어를 선택할 수 있습니다.')
@@ -1089,6 +1382,42 @@ async function selectPlayers(event) {
   )
 }
 
+async function updateRpsSettings(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  const host = requireParticipant(room, userId)
+  if (!host.isHost) {
+    throw new Error('방장만 게임 규칙을 변경할 수 있습니다.')
+  }
+  if (room.gameId !== 'rock-paper-scissors') {
+    throw new Error('가위바위보 방에서만 변경할 수 있는 규칙입니다.')
+  }
+  if (!['waiting', 'ready'].includes(room.status)) {
+    throw new Error('게임 시작 전 대기실에서만 규칙을 변경할 수 있습니다.')
+  }
+
+  const settings = normalizeRpsSettings(event.arguments)
+  if (room.players.length > settings.maxPlayers) {
+    throw new Error('현재 참가자 수보다 작은 방 정원으로 변경할 수 없습니다.')
+  }
+  const players = room.players.map((player, index) => ({
+    ...player,
+    isPlaying: true,
+    slot: index + 1,
+    isReady: player.isHost,
+  }))
+
+  return putVersionedRoom({
+    ...room,
+    maxPlayers: settings.maxPlayers,
+    rpsSettings: settings,
+    players,
+    status: 'waiting',
+    version: room.version + 1,
+    updatedAt: nowIso(),
+  }, room.version)
+}
+
 async function inviteFriendToRoom(event) {
   const { userId, isGuest } = requireIdentity(event)
   if (isGuest) {
@@ -1103,7 +1432,7 @@ async function inviteFriendToRoom(event) {
   if (!['waiting', 'ready'].includes(room.status)) {
     throw new Error('대기 중인 방에만 친구를 초대할 수 있습니다.')
   }
-  if (room.players.length >= MAX_ROOM_PARTICIPANTS) {
+  if (room.players.length >= (room.maxPlayers ?? MAX_ROOM_PARTICIPANTS)) {
     throw new Error('방 정원이 가득 찼습니다.')
   }
 
@@ -1149,6 +1478,27 @@ async function startGame(event) {
   }
 
   const gamePlayers = getGamePlayers(room)
+  if (room.gameId === 'rock-paper-scissors') {
+    if (
+      gamePlayers.length < 2 ||
+      gamePlayers.length > (room.rpsSettings?.maxPlayers ?? 6) ||
+      !gamePlayers.every((candidate) => candidate.isReady)
+    ) {
+      throw new Error('2명 이상의 모든 플레이어가 준비해야 게임을 시작할 수 있습니다.')
+    }
+    const epoch = nowEpochSeconds()
+    const nextRoom = {
+      ...createInitialRpsGame(room, gamePlayers),
+      lastSeenAt: Object.fromEntries(
+        gamePlayers.map((candidate) => [candidate.userId, epoch]),
+      ),
+      version: room.version + 1,
+      updatedAt: nowIso(),
+      expiresAt: epoch + ROOM_TTL_SECONDS,
+    }
+    return putVersionedRoom(nextRoom, room.version)
+  }
+
   if (
     gamePlayers.length !== 2 ||
     !gamePlayers.every((candidate) => candidate.isReady)
@@ -1193,7 +1543,9 @@ async function returnToWaitingRoom(event) {
   const epoch = nowEpochSeconds()
   const players = room.players.map((player) => ({
     ...player,
-    isReady: player.isPlaying === true && player.isHost === true,
+    isPlaying:
+      room.gameId === 'rock-paper-scissors' ? true : player.isPlaying,
+    isReady: player.isHost === true,
     scores: [],
   }))
   const nextRoom = {
@@ -1206,6 +1558,21 @@ async function returnToWaitingRoom(event) {
     winnerId: undefined,
     finishReason: undefined,
     resultRecorded: false,
+    rpsPhase: undefined,
+    rpsRound: undefined,
+    rpsTournamentRound: undefined,
+    rpsCurrentPlayerIds: [],
+    rpsSubmittedPlayerIds: [],
+    rpsRevealedSelections: [],
+    rpsPlayerStates: [],
+    rpsRoundWinnerIds: [],
+    rpsRoundDeadline: undefined,
+    rpsRevealEndsAt: undefined,
+    _rpsSelections: {},
+    _rpsPendingIds: [],
+    _rpsAdvancerIds: [],
+    _rpsMatchWinnerId: undefined,
+    _rpsGameWinnerId: undefined,
     lastSeenAt: Object.fromEntries(
       players.map((player) => [player.userId, epoch]),
     ),
@@ -1217,12 +1584,89 @@ async function returnToWaitingRoom(event) {
   return putVersionedRoom(nextRoom, room.version)
 }
 
+async function submitRpsHand(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  if (
+    room.gameId !== 'rock-paper-scissors' ||
+    room.status !== 'playing' ||
+    room.rpsPhase !== 'selecting'
+  ) {
+    throw new Error('현재 가위바위보를 선택할 수 없습니다.')
+  }
+  if (!(room.rpsCurrentPlayerIds ?? []).includes(userId)) {
+    throw new Error('현재 대결에 참여 중인 플레이어만 선택할 수 있습니다.')
+  }
+  if (new Date(room.rpsRoundDeadline).getTime() <= Date.now()) {
+    throw new Error('선택 시간이 끝났습니다. 자동 선택 결과를 확인해 주세요.')
+  }
+  const hand = String(event.arguments.hand)
+  if (!RPS_HANDS.includes(hand)) {
+    throw new Error('가위, 바위, 보 중 하나를 선택해 주세요.')
+  }
+
+  const selections = { ...(room._rpsSelections ?? {}), [userId]: hand }
+  const submittedPlayerIds = Object.keys(selections)
+  const selectedRoom = {
+    ...room,
+    _rpsSelections: selections,
+    rpsSubmittedPlayerIds: submittedPlayerIds,
+  }
+  const allSubmitted = room.rpsCurrentPlayerIds.every(
+    (playerId) => selections[playerId],
+  )
+  const nextRoom = {
+    ...(allSubmitted ? revealRpsRound(selectedRoom) : selectedRoom),
+    version: room.version + 1,
+    updatedAt: nowIso(),
+  }
+  return putVersionedRoom(nextRoom, room.version)
+}
+
+async function advanceRpsRound(event) {
+  const { room } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  if (room.gameId !== 'rock-paper-scissors' || room.status !== 'playing') {
+    return room
+  }
+
+  let advancedRoom
+  if (room.rpsPhase === 'selecting') {
+    if (new Date(room.rpsRoundDeadline).getTime() > Date.now()) {
+      return room
+    }
+    advancedRoom = revealRpsRound(room, true)
+  } else if (room.rpsPhase === 'revealing') {
+    if (new Date(room.rpsRevealEndsAt).getTime() > Date.now()) {
+      return room
+    }
+    advancedRoom = advanceRevealedRpsRound(room)
+  } else {
+    throw new Error('가위바위보 진행 상태가 올바르지 않습니다.')
+  }
+
+  if (advancedRoom.status === 'finished') {
+    return finishRpsMatch(advancedRoom, room.version)
+  }
+
+  const epoch = nowEpochSeconds()
+  return putVersionedRoom({
+    ...advancedRoom,
+    version: room.version + 1,
+    updatedAt: nowIso(),
+    expiresAt: epoch + ROOM_TTL_SECONDS,
+  }, room.version)
+}
+
 async function rollDice(event) {
   const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
 
   if (room.status !== 'playing') {
     throw new Error('진행 중인 게임이 아닙니다.')
+  }
+  if (room.gameId !== 'yacht-dice') {
+    throw new Error('요트 다이스 방에서만 주사위를 굴릴 수 있습니다.')
   }
 
   if (room.activePlayerId !== userId) {
@@ -1275,6 +1719,7 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
   const match = {
     matchId,
     roomCode: room.roomCode,
+    gameId: 'yacht-dice',
     winnerId,
     loserId,
     reason,
@@ -1293,6 +1738,7 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
       matchKey: `${timestamp}#${matchId}`,
       matchId,
       roomCode: room.roomCode,
+      gameId: 'yacht-dice',
       result: getMatchResult(player.userId, winnerId),
       reason,
       myScore: playerScores[index],
@@ -1306,6 +1752,9 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
       player.isGuest !== true &&
       !String(player.userId).startsWith('guest:'),
   )
+  const legacyProfiles = isRankedMatch
+    ? await getProfiles(gamePlayers.map((player) => player.userId))
+    : new Map()
   const transactionItems = [
     {
       Put: {
@@ -1341,37 +1790,28 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
       : []),
   ]
 
-  if (isRankedMatch && winnerId && loserId) {
-    transactionItems.push(
-      {
+  if (isRankedMatch) {
+    transactionItems.push(...gamePlayers.map((player) => {
+      const result = getMatchResult(player.userId, winnerId)
+      const legacy = legacyProfiles.get(player.userId) ?? {}
+      return {
         Update: {
-          TableName: USERS_TABLE,
-          Key: { userId: winnerId },
+          TableName: GAME_STATS_TABLE,
+          Key: { userId: player.userId, gameId: 'yacht-dice' },
           UpdateExpression:
-            'SET wins = if_not_exists(wins, :zero) + :one, updatedAt = :updatedAt',
-          ConditionExpression: 'attribute_exists(userId)',
+            'SET wins = if_not_exists(wins, :baseWins) + :win, losses = if_not_exists(losses, :baseLosses) + :loss, draws = if_not_exists(draws, :zero) + :draw, updatedAt = :updatedAt',
           ExpressionAttributeValues: {
+            ':baseWins': legacy.wins ?? 0,
+            ':baseLosses': legacy.losses ?? 0,
             ':zero': 0,
-            ':one': 1,
+            ':win': result === 'win' ? 1 : 0,
+            ':loss': result === 'loss' ? 1 : 0,
+            ':draw': result === 'draw' ? 1 : 0,
             ':updatedAt': timestamp,
           },
         },
-      },
-      {
-        Update: {
-          TableName: USERS_TABLE,
-          Key: { userId: loserId },
-          UpdateExpression:
-            'SET losses = if_not_exists(losses, :zero) + :one, updatedAt = :updatedAt',
-          ConditionExpression: 'attribute_exists(userId)',
-          ExpressionAttributeValues: {
-            ':zero': 0,
-            ':one': 1,
-            ':updatedAt': timestamp,
-          },
-        },
-      },
-    )
+      }
+    }))
   }
 
   try {
@@ -1391,28 +1831,165 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
   return finishedRoom
 }
 
+async function finishRpsMatch(room, expectedVersion) {
+  const timestamp = nowIso()
+  const epoch = nowEpochSeconds()
+  const matchId = randomUUID()
+  const gamePlayers = getGamePlayers(room)
+  const winnerId = room.winnerId
+  const stateById = new Map(
+    (room.rpsPlayerStates ?? []).map((state) => [state.userId, state]),
+  )
+  const matchPlayers = gamePlayers.map((player, index) => ({
+    userId: player.userId,
+    nickname: player.nickname,
+    slot: player.slot ?? index + 1,
+    totalScore:
+      room.rpsSettings?.mode === 'allPlay'
+        ? stateById.get(player.userId)?.lives ?? 0
+        : stateById.get(player.userId)?.wins ?? 0,
+    scores: [],
+  }))
+  const finishedRoom = {
+    ...room,
+    status: 'finished',
+    finishReason: 'completed',
+    resultRecorded: true,
+    version: expectedVersion + 1,
+    updatedAt: timestamp,
+    expiresAt: epoch + ROOM_TTL_SECONDS,
+  }
+  const match = {
+    matchId,
+    roomCode: room.roomCode,
+    gameId: 'rock-paper-scissors',
+    winnerId,
+    reason: 'completed',
+    players: matchPlayers,
+    finishedAt: timestamp,
+  }
+  const isRankedMatch = gamePlayers.every(
+    (player) =>
+      player.isGuest !== true &&
+      !String(player.userId).startsWith('guest:'),
+  )
+  const winner = gamePlayers.find((player) => player.userId === winnerId)
+  const playerMatchItems = gamePlayers.map((player) => ({
+    userId: player.userId,
+    matchKey: `${timestamp}#${matchId}`,
+    matchId,
+    roomCode: room.roomCode,
+    gameId: 'rock-paper-scissors',
+    result: getMatchResult(player.userId, winnerId),
+    reason: 'completed',
+    myScore: player.userId === winnerId ? 1 : 0,
+    opponentScore: player.userId === winnerId ? 0 : 1,
+    opponentNickname:
+      player.userId === winnerId
+        ? `참가자 ${Math.max(1, gamePlayers.length - 1)}명`
+        : winner?.nickname ?? '우승자',
+    finishedAt: timestamp,
+  }))
+  const transactionItems = [
+    {
+      Put: {
+        TableName: ROOMS_TABLE,
+        Item: finishedRoom,
+        ConditionExpression:
+          '#version = :expectedVersion AND resultRecorded = :notRecorded',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: {
+          ':expectedVersion': expectedVersion,
+          ':notRecorded': false,
+        },
+      },
+    },
+    {
+      Put: {
+        TableName: MATCHES_TABLE,
+        Item: match,
+        ConditionExpression: 'attribute_not_exists(matchId)',
+      },
+    },
+    ...(isRankedMatch
+      ? playerMatchItems.flatMap((item) => [
+          {
+            Put: {
+              TableName: PLAYER_MATCHES_TABLE,
+              Item: item,
+              ConditionExpression:
+                'attribute_not_exists(userId) AND attribute_not_exists(matchKey)',
+            },
+          },
+          {
+            Update: {
+              TableName: GAME_STATS_TABLE,
+              Key: { userId: item.userId, gameId: 'rock-paper-scissors' },
+              UpdateExpression:
+                'SET wins = if_not_exists(wins, :zero) + :win, losses = if_not_exists(losses, :zero) + :loss, draws = if_not_exists(draws, :zero) + :draw, updatedAt = :updatedAt',
+              ExpressionAttributeValues: {
+                ':zero': 0,
+                ':win': item.result === 'win' ? 1 : 0,
+                ':loss': item.result === 'loss' ? 1 : 0,
+                ':draw': item.result === 'draw' ? 1 : 0,
+                ':updatedAt': timestamp,
+              },
+            },
+          },
+        ])
+      : []),
+  ]
+
+  try {
+    await documentClient.send(new TransactWriteCommand({
+      TransactItems: transactionItems,
+    }))
+  } catch (error) {
+    if (error?.name === 'TransactionCanceledException') {
+      throw new Error('경기 결과가 이미 처리되었거나 게임 상태가 변경되었습니다.')
+    }
+    throw error
+  }
+  return finishedRoom
+}
+
 async function myMatchHistory(event) {
   const { userId } = requireIdentity(event)
+  const gameId = normalizeGameId(event.arguments.gameId)
   const limit = normalizeQueryLimit(
     event.arguments.limit,
     DEFAULT_HISTORY_LIMIT,
   )
-  const result = await documentClient.send(
-    new QueryCommand({
+  const items = []
+  let exclusiveStartKey = decodeNextToken(event.arguments.nextToken)
+  let scannedPages = 0
+  do {
+    const result = await documentClient.send(new QueryCommand({
       TableName: PLAYER_MATCHES_TABLE,
       KeyConditionExpression: 'userId = :userId',
       ExpressionAttributeValues: {
         ':userId': userId,
+        ':gameId': gameId,
       },
+      FilterExpression:
+        gameId === 'yacht-dice'
+          ? 'attribute_not_exists(gameId) OR gameId = :gameId'
+          : 'gameId = :gameId',
       ScanIndexForward: false,
-      Limit: limit,
-      ExclusiveStartKey: decodeNextToken(event.arguments.nextToken),
-    }),
-  )
+      Limit: Math.min(MAX_QUERY_LIMIT, Math.max(1, limit - items.length)),
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+    items.push(...(result.Items ?? []))
+    exclusiveStartKey = result.LastEvaluatedKey
+    scannedPages += 1
+  } while (exclusiveStartKey && items.length < limit && scannedPages < 10)
 
   return {
-    items: result.Items ?? [],
-    nextToken: encodeNextToken(result.LastEvaluatedKey),
+    items: items.slice(0, limit).map((item) => ({
+      ...item,
+      gameId: item.gameId ?? 'yacht-dice',
+    })),
+    nextToken: encodeNextToken(exclusiveStartKey),
   }
 }
 
@@ -1463,6 +2040,7 @@ async function matchDetail(event) {
   return {
     matchId: match.matchId,
     roomCode: match.roomCode,
+    gameId: match.gameId ?? 'yacht-dice',
     result: getMatchResult(userId, match.winnerId),
     reason: match.reason,
     winnerId: match.winnerId ?? null,
@@ -1475,7 +2053,11 @@ async function confirmScore(event) {
   const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
 
-  if (room.status !== 'playing' || room.activePlayerId !== userId) {
+  if (
+    room.gameId !== 'yacht-dice' ||
+    room.status !== 'playing' ||
+    room.activePlayerId !== userId
+  ) {
     throw new Error('현재 점수를 확정할 차례가 아닙니다.')
   }
 
@@ -1569,6 +2151,9 @@ async function forfeit(event) {
   if (room.status !== 'playing') {
     throw new Error('진행 중인 게임에서만 기권할 수 있습니다.')
   }
+  if (room.gameId !== 'yacht-dice') {
+    throw new Error('가위바위보 기권 처리는 다음 버전에서 지원합니다.')
+  }
 
   requireGamePlayer(room, userId)
   const winner = getGamePlayers(room).find(
@@ -1612,6 +2197,9 @@ async function claimDisconnectWin(event) {
 
   if (room.status !== 'playing') {
     throw new Error('진행 중인 게임이 아닙니다.')
+  }
+  if (room.gameId !== 'yacht-dice') {
+    throw new Error('가위바위보에서는 연결 복구 후 경기를 계속해 주세요.')
   }
 
   requireGamePlayer(room, userId)
@@ -1693,6 +2281,9 @@ async function processPresenceCheck() {
 
     for (const room of result.Items ?? []) {
       checked += 1
+      if (room.gameId !== 'yacht-dice') {
+        continue
+      }
       const gamePlayers = getGamePlayers(room)
       if (gamePlayers.length !== 2) {
         continue
@@ -1762,6 +2353,7 @@ const handlers = {
     const { userId } = requireIdentity(event)
     return toProfileResponse(await getProfile(userId))
   },
+  myGameStats,
   room: async (event) => {
     const { room } = await readParticipantRoom(event)
     return room
@@ -1781,11 +2373,14 @@ const handlers = {
   leaveRoom,
   setReady,
   selectPlayers,
+  updateRpsSettings,
   startGame,
   rollDice,
   confirmScore,
   forfeit,
   returnToWaitingRoom,
+  submitRpsHand,
+  advanceRpsRound,
   heartbeat,
   claimDisconnectWin,
   sendChatMessage,

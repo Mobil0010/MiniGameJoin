@@ -14,6 +14,10 @@ import type {
   OnlineRoom,
   OnlineRoomPlayer,
   OnlineChatChannel,
+  OnlineGameId,
+  OnlineGameStats,
+  RpsHand,
+  RpsSettings,
   OnlineUser,
 } from './types'
 import type { RealtimeChatMessage } from './realtimeGateway'
@@ -49,7 +53,7 @@ interface UserProfileDto {
 
 interface RoomDto {
   roomCode: string
-  gameId: 'yacht-dice'
+  gameId: OnlineGameId
   status: OnlineRoom['status']
   players: Array<{
     userId: string
@@ -57,7 +61,7 @@ interface RoomDto {
     isHost: boolean
     isReady: boolean
     isPlaying?: boolean | null
-    slot?: 1 | 2 | null
+    slot?: number | null
     scores: Array<{
       category: ScoreCategory
       score: number
@@ -73,6 +77,28 @@ interface RoomDto {
   version: number
   winnerId?: string | null
   finishReason?: 'completed' | 'forfeit' | 'disconnectTimeout' | null
+  maxPlayers: number
+  rpsSettings?: {
+    mode: 'tournament' | 'allPlay'
+    timeLimitSeconds: number
+    winsRequired: number
+    maxPlayers: number
+  } | null
+  rpsPhase?: 'selecting' | 'revealing' | null
+  rpsRound?: number | null
+  rpsTournamentRound?: number | null
+  rpsCurrentPlayerIds: string[]
+  rpsSubmittedPlayerIds: string[]
+  rpsRevealedSelections: Array<{ userId: string; hand: RpsHand }>
+  rpsPlayerStates: Array<{
+    userId: string
+    wins: number
+    lives: number
+    eliminated: boolean
+  }>
+  rpsRoundWinnerIds: string[]
+  rpsRoundDeadline?: string | null
+  rpsRevealEndsAt?: string | null
   createdAt: string
   updatedAt: string
   expiresAt: number
@@ -92,6 +118,7 @@ interface MatchHistoryPageDto {
   items: Array<{
     matchId: string
     roomCode: string
+    gameId: OnlineGameId
     result: 'win' | 'loss' | 'draw'
     reason: 'completed' | 'forfeit' | 'disconnectTimeout'
     myScore: number
@@ -105,6 +132,7 @@ interface MatchHistoryPageDto {
 interface MatchDetailDto {
   matchId: string
   roomCode: string
+  gameId: OnlineGameId
   result: 'win' | 'loss' | 'draw'
   reason: 'completed' | 'forfeit' | 'disconnectTimeout'
   winnerId?: string | null
@@ -158,6 +186,7 @@ const ROOM_FIELDS = `
       score
     }
   }
+  maxPlayers
   activePlayerId
   dice {
     id
@@ -168,6 +197,30 @@ const ROOM_FIELDS = `
   version
   winnerId
   finishReason
+  rpsSettings {
+    mode
+    timeLimitSeconds
+    winsRequired
+    maxPlayers
+  }
+  rpsPhase
+  rpsRound
+  rpsTournamentRound
+  rpsCurrentPlayerIds
+  rpsSubmittedPlayerIds
+  rpsRevealedSelections {
+    userId
+    hand
+  }
+  rpsPlayerStates {
+    userId
+    wins
+    lives
+    eliminated
+  }
+  rpsRoundWinnerIds
+  rpsRoundDeadline
+  rpsRevealEndsAt
   createdAt
   updatedAt
   expiresAt
@@ -471,13 +524,29 @@ function mapRoom(room: RoomDto): OnlineRoom {
     gameId: room.gameId,
     status: room.status,
     players,
-    maxPlayers: 4,
+    maxPlayers: room.maxPlayers,
     activePlayerId: room.activePlayerId,
     dice,
     rollCount: room.rollCount,
     version: room.version,
     winnerId: room.winnerId,
     finishReason: mapFinishReason(room.finishReason),
+    rpsSettings: room.rpsSettings
+      ? {
+          ...room.rpsSettings,
+          mode: room.rpsSettings.mode === 'allPlay' ? 'all-play' : 'tournament',
+        } as RpsSettings
+      : undefined,
+    rpsPhase: room.rpsPhase ?? null,
+    rpsRound: room.rpsRound ?? undefined,
+    rpsTournamentRound: room.rpsTournamentRound ?? undefined,
+    rpsCurrentPlayerIds: room.rpsCurrentPlayerIds ?? [],
+    rpsSubmittedPlayerIds: room.rpsSubmittedPlayerIds ?? [],
+    rpsRevealedSelections: room.rpsRevealedSelections ?? [],
+    rpsPlayerStates: room.rpsPlayerStates ?? [],
+    rpsRoundWinnerIds: room.rpsRoundWinnerIds ?? [],
+    rpsRoundDeadline: room.rpsRoundDeadline ?? null,
+    rpsRevealEndsAt: room.rpsRevealEndsAt ?? null,
   }
 }
 
@@ -532,15 +601,16 @@ export async function deleteOnlineProfile(): Promise<void> {
 }
 
 export async function createOnlineRoom(
+  gameId: OnlineGameId,
   guestNickname?: string,
 ): Promise<OnlineRoom> {
   const data = await graphqlRequest<{ createRoom: RoomDto }>(
-    `mutation CreateRoom($guestNickname: String) {
-      createRoom(guestNickname: $guestNickname) {
+    `mutation CreateRoom($gameId: String, $guestNickname: String) {
+      createRoom(gameId: $gameId, guestNickname: $guestNickname) {
         ${ROOM_FIELDS}
       }
     }`,
-    { guestNickname: guestNickname ?? null },
+    { gameId, guestNickname: guestNickname ?? null },
   )
 
   return mapRoom(data.createRoom)
@@ -647,6 +717,42 @@ export async function selectOnlinePlayers(
   return mapRoom(data.selectPlayers)
 }
 
+export async function updateOnlineRpsSettings(
+  room: OnlineRoom,
+  settings: RpsSettings,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ updateRpsSettings: RoomDto }>(
+    `mutation UpdateRpsSettings(
+      $roomCode: ID!
+      $mode: RpsMode!
+      $timeLimitSeconds: Int!
+      $winsRequired: Int!
+      $maxPlayers: Int!
+      $expectedVersion: Int!
+    ) {
+      updateRpsSettings(
+        roomCode: $roomCode
+        mode: $mode
+        timeLimitSeconds: $timeLimitSeconds
+        winsRequired: $winsRequired
+        maxPlayers: $maxPlayers
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    {
+      roomCode: room.code,
+      mode: settings.mode === 'all-play' ? 'allPlay' : 'tournament',
+      timeLimitSeconds: settings.timeLimitSeconds,
+      winsRequired: settings.winsRequired,
+      maxPlayers: settings.maxPlayers,
+      expectedVersion: room.version,
+    },
+  )
+  return mapRoom(data.updateRpsSettings)
+}
+
 export async function startOnlineGame(
   room: OnlineRoom,
 ): Promise<OnlineRoom> {
@@ -663,6 +769,47 @@ export async function startOnlineGame(
   )
 
   return mapRoom(data.startGame)
+}
+
+export async function submitOnlineRpsHand(
+  room: OnlineRoom,
+  hand: RpsHand,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ submitRpsHand: RoomDto }>(
+    `mutation SubmitRpsHand(
+      $roomCode: ID!
+      $hand: RpsHand!
+      $expectedVersion: Int!
+    ) {
+      submitRpsHand(
+        roomCode: $roomCode
+        hand: $hand
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    {
+      roomCode: room.code,
+      hand,
+      expectedVersion: room.version,
+    },
+  )
+  return mapRoom(data.submitRpsHand)
+}
+
+export async function advanceOnlineRpsRound(
+  room: OnlineRoom,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ advanceRpsRound: RoomDto }>(
+    `mutation AdvanceRpsRound($roomCode: ID!, $expectedVersion: Int!) {
+      advanceRpsRound(roomCode: $roomCode, expectedVersion: $expectedVersion) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    { roomCode: room.code, expectedVersion: room.version },
+  )
+  return mapRoom(data.advanceRpsRound)
 }
 
 export async function rollOnlineDice(
@@ -952,16 +1099,18 @@ export async function inviteOnlineFriend(
 }
 
 export async function getMyMatchHistory(
+  gameId: OnlineGameId,
   nextToken?: string | null,
 ): Promise<MatchHistoryPage> {
   const data = await graphqlRequest<{
     myMatchHistory: MatchHistoryPageDto
   }>(
-    `query MyMatchHistory($limit: Int, $nextToken: String) {
-      myMatchHistory(limit: $limit, nextToken: $nextToken) {
+    `query MyMatchHistory($gameId: String!, $limit: Int, $nextToken: String) {
+      myMatchHistory(gameId: $gameId, limit: $limit, nextToken: $nextToken) {
         items {
           matchId
           roomCode
+          gameId
           result
           reason
           myScore
@@ -972,7 +1121,7 @@ export async function getMyMatchHistory(
         nextToken
       }
     }`,
-    { limit: 20, nextToken: nextToken ?? null },
+    { gameId, limit: 20, nextToken: nextToken ?? null },
   )
 
   return {
@@ -994,6 +1143,7 @@ export async function getOnlineMatchDetail(
       matchDetail(matchId: $matchId) {
         matchId
         roomCode
+        gameId
         result
         reason
         winnerId
@@ -1022,4 +1172,22 @@ export async function getOnlineMatchDetail(
       scores: mapScoreEntries(player.scores),
     })),
   }
+}
+
+export async function getMyGameStats(
+  gameId: OnlineGameId,
+): Promise<OnlineGameStats> {
+  const data = await graphqlRequest<{ myGameStats: OnlineGameStats }>(
+    `query MyGameStats($gameId: String!) {
+      myGameStats(gameId: $gameId) {
+        gameId
+        wins
+        losses
+        draws
+        winRate
+      }
+    }`,
+    { gameId },
+  )
+  return data.myGameStats
 }

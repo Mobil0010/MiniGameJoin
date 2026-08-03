@@ -43,6 +43,41 @@ enum FriendRequestDecision {
   reject
 }
 
+enum RpsMode {
+  tournament
+  allPlay
+}
+
+enum RpsHand {
+  rock
+  paper
+  scissors
+}
+
+enum RpsPhase {
+  selecting
+  revealing
+}
+
+type RpsSettings @aws_cognito_user_pools @aws_iam {
+  mode: RpsMode!
+  timeLimitSeconds: Int!
+  winsRequired: Int!
+  maxPlayers: Int!
+}
+
+type RpsPlayerState @aws_cognito_user_pools @aws_iam {
+  userId: ID!
+  wins: Int!
+  lives: Int!
+  eliminated: Boolean!
+}
+
+type RpsSelection @aws_cognito_user_pools @aws_iam {
+  userId: ID!
+  hand: RpsHand!
+}
+
 type UserProfile {
   userId: ID!
   email: AWSEmail!
@@ -52,6 +87,14 @@ type UserProfile {
   winRate: Float!
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
+}
+
+type GameStats {
+  gameId: String!
+  wins: Int!
+  losses: Int!
+  draws: Int!
+  winRate: Float!
 }
 
 type ScoreEntry @aws_cognito_user_pools @aws_iam {
@@ -80,12 +123,24 @@ type Room @aws_cognito_user_pools @aws_iam {
   gameId: String!
   status: RoomStatus!
   players: [RoomPlayer!]!
+  maxPlayers: Int!
   activePlayerId: ID
   dice: [Die!]!
   rollCount: Int!
   version: Int!
   winnerId: ID
   finishReason: MatchFinishReason
+  rpsSettings: RpsSettings
+  rpsPhase: RpsPhase
+  rpsRound: Int
+  rpsTournamentRound: Int
+  rpsCurrentPlayerIds: [ID!]!
+  rpsSubmittedPlayerIds: [ID!]!
+  rpsRevealedSelections: [RpsSelection!]!
+  rpsPlayerStates: [RpsPlayerState!]!
+  rpsRoundWinnerIds: [ID!]!
+  rpsRoundDeadline: AWSDateTime
+  rpsRevealEndsAt: AWSDateTime
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
   expiresAt: AWSTimestamp!
@@ -128,6 +183,7 @@ type UserSearchResult {
 type MatchHistoryItem {
   matchId: ID!
   roomCode: ID!
+  gameId: String!
   result: MatchResult!
   reason: MatchFinishReason!
   myScore: Int!
@@ -152,6 +208,7 @@ type MatchPlayer {
 type MatchDetail {
   matchId: ID!
   roomCode: ID!
+  gameId: String!
   result: MatchResult!
   reason: MatchFinishReason!
   winnerId: ID
@@ -161,13 +218,14 @@ type MatchDetail {
 
 type Query {
   me: UserProfile!
+  myGameStats(gameId: String!): GameStats!
   room(roomCode: ID!): Room! @aws_cognito_user_pools @aws_iam
   listChatMessages(roomCode: ID!, channel: ChatChannel!, limit: Int): [ChatMessage!]!
     @aws_cognito_user_pools
     @aws_iam
   friendDashboard: FriendDashboard!
   searchMembers(query: String!): [UserSearchResult!]!
-  myMatchHistory(limit: Int, nextToken: String): MatchHistoryPage!
+  myMatchHistory(gameId: String!, limit: Int, nextToken: String): MatchHistoryPage!
   matchDetail(matchId: ID!): MatchDetail!
 }
 
@@ -176,7 +234,7 @@ type Mutation {
   updateNickname(nickname: String!): UserProfile!
   deleteMyProfile: Boolean!
 
-  createRoom(guestNickname: String): Room!
+  createRoom(gameId: String, guestNickname: String): Room!
     @aws_cognito_user_pools
     @aws_iam
   joinRoom(roomCode: ID!, guestNickname: String): Room!
@@ -196,6 +254,14 @@ type Mutation {
     playerIds: [ID!]!
     expectedVersion: Int!
   ): Room! @aws_cognito_user_pools @aws_iam
+  updateRpsSettings(
+    roomCode: ID!
+    mode: RpsMode!
+    timeLimitSeconds: Int!
+    winsRequired: Int!
+    maxPlayers: Int!
+    expectedVersion: Int!
+  ): Room! @aws_cognito_user_pools @aws_iam
 
   rollDice(
     roomCode: ID!
@@ -211,6 +277,12 @@ type Mutation {
     @aws_cognito_user_pools
     @aws_iam
   returnToWaitingRoom(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
+  submitRpsHand(roomCode: ID!, hand: RpsHand!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
+  advanceRpsRound(roomCode: ID!, expectedVersion: Int!): Room!
     @aws_cognito_user_pools
     @aws_iam
 
@@ -239,12 +311,15 @@ type Subscription {
         "leaveRoom"
         "setReady"
         "selectPlayers"
+        "updateRpsSettings"
         "startGame"
         "rollDice"
         "confirmScore"
         "forfeit"
         "returnToWaitingRoom"
         "claimDisconnectWin"
+        "submitRpsHand"
+        "advanceRpsRound"
       ]
     )
   onChatMessage(roomCode: ID!, channel: ChatChannel!): ChatMessage

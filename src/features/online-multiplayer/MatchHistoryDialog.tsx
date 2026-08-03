@@ -1,20 +1,26 @@
 import { useEffect, useState } from 'react'
 import { SCORE_CATEGORY_LABELS } from '../../games/yacht-dice/constants'
-import { calculateMemberWinRate } from './prototype'
 import {
+  getMyGameStats,
   getMyMatchHistory,
   getOnlineMatchDetail,
 } from './appSyncApi'
 import type {
   MatchDetail,
   MatchHistoryItem,
+  OnlineGameId,
+  OnlineGameStats,
   OnlineMatchEndReason,
-  OnlineUser,
 } from './types'
 
 interface MatchHistoryDialogProps {
-  user: OnlineUser
+  initialGameId?: OnlineGameId
   onClose: () => void
+}
+
+const GAME_LABELS: Record<OnlineGameId, string> = {
+  'yacht-dice': 'Yacht Dice',
+  'rock-paper-scissors': '가위바위보',
 }
 
 const RESULT_LABELS = {
@@ -36,7 +42,12 @@ function formatFinishedAt(value: string): string {
   }).format(new Date(value))
 }
 
-function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
+function MatchHistoryDialog({
+  initialGameId = 'yacht-dice',
+  onClose,
+}: MatchHistoryDialogProps) {
+  const [gameId, setGameId] = useState<OnlineGameId>(initialGameId)
+  const [stats, setStats] = useState<OnlineGameStats | null>(null)
   const [items, setItems] = useState<MatchHistoryItem[]>([])
   const [nextToken, setNextToken] = useState<string | null>(null)
   const [selectedMatch, setSelectedMatch] = useState<MatchDetail | null>(null)
@@ -47,12 +58,18 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
 
   useEffect(() => {
     let active = true
+    setIsLoading(true)
+    setErrorMessage('')
+    setItems([])
+    setNextToken(null)
+    setSelectedMatch(null)
 
-    void getMyMatchHistory()
-      .then((page) => {
+    void Promise.all([getMyGameStats(gameId), getMyMatchHistory(gameId)])
+      .then(([nextStats, page]) => {
         if (!active) {
           return
         }
+        setStats(nextStats)
         setItems(page.items)
         setNextToken(page.nextToken)
       })
@@ -74,7 +91,7 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
     return () => {
       active = false
     }
-  }, [])
+  }, [gameId])
 
   const loadMore = async () => {
     if (!nextToken || isLoadingMore) {
@@ -84,7 +101,7 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
     setIsLoadingMore(true)
     setErrorMessage('')
     try {
-      const page = await getMyMatchHistory(nextToken)
+      const page = await getMyMatchHistory(gameId, nextToken)
       setItems((current) => [...current, ...page.items])
       setNextToken(page.nextToken)
     } catch (error) {
@@ -122,21 +139,50 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
         aria-modal="true"
         aria-labelledby="match-history-title"
       >
+        <button
+          className="account-modal-close"
+          type="button"
+          aria-label="전적 창 닫기"
+          onClick={onClose}
+        >
+          ×
+        </button>
         <span>MATCH HISTORY</span>
-        <h2 id="match-history-title">전적 상세 조회</h2>
+        <h2 id="match-history-title">게임별 전적</h2>
+
+        <div className="match-history-tabs" role="tablist" aria-label="게임 선택">
+          {(Object.entries(GAME_LABELS) as Array<[OnlineGameId, string]>).map(
+            ([id, label]) => (
+              <button
+                className={gameId === id ? 'match-history-tab-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={gameId === id}
+                key={id}
+                onClick={() => setGameId(id)}
+              >
+                {label}
+              </button>
+            ),
+          )}
+        </div>
 
         <div className="match-history-summary">
           <div>
             <span>승리</span>
-            <strong>{user.stats?.wins ?? 0}</strong>
+            <strong>{stats?.wins ?? 0}</strong>
           </div>
           <div>
             <span>패배</span>
-            <strong>{user.stats?.losses ?? 0}</strong>
+            <strong>{stats?.losses ?? 0}</strong>
+          </div>
+          <div>
+            <span>무승부</span>
+            <strong>{stats?.draws ?? 0}</strong>
           </div>
           <div>
             <span>승률</span>
-            <strong>{calculateMemberWinRate(user)}%</strong>
+            <strong>{stats?.winRate ?? 0}%</strong>
           </div>
         </div>
 
@@ -152,7 +198,7 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
           </div>
         ) : items.length === 0 ? (
           <div className="match-history-empty">
-            <strong>아직 완료한 온라인 경기가 없습니다.</strong>
+            <strong>아직 완료한 {GAME_LABELS[gameId]} 경기가 없습니다.</strong>
             <p>경기를 끝내면 상대, 점수, 종료 사유가 이곳에 기록됩니다.</p>
           </div>
         ) : (
@@ -168,9 +214,9 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
                 </div>
                 <div className="match-history-opponent">
                   <span>vs. {item.opponentNickname}</span>
-                  <strong>
-                    {item.myScore} : {item.opponentScore}
-                  </strong>
+                  <strong>{gameId === 'rock-paper-scissors'
+                    ? item.result === 'win' ? '우승' : '탈락'
+                    : `${item.myScore} : ${item.opponentScore}`}</strong>
                 </div>
                 <small>
                   {REASON_LABELS[item.reason]} · 방 {item.roomCode}
@@ -182,7 +228,7 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
                 >
                   {loadingDetailId === item.matchId
                     ? '불러오는 중…'
-                    : '점수표 보기'}
+                    : gameId === 'yacht-dice' ? '점수표 보기' : '경기 결과 보기'}
                 </button>
               </article>
             ))}
@@ -227,7 +273,9 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
                     <strong>{player.nickname}</strong>
                     <b>{player.totalScore}점</b>
                   </div>
-                  {Object.keys(player.scores).length === 0 ? (
+                  {selectedMatch.gameId === 'rock-paper-scissors' ? (
+                    <p>{player.userId === selectedMatch.winnerId ? '최종 우승' : '탈락'}</p>
+                  ) : Object.keys(player.scores).length === 0 ? (
                     <p>이전 버전에서 저장된 경기라 세부 점수표가 없습니다.</p>
                   ) : (
                     <ul>
@@ -253,11 +301,6 @@ function MatchHistoryDialog({ user, onClose }: MatchHistoryDialogProps) {
           </section>
         )}
 
-        <div className="account-modal-actions">
-          <button type="button" onClick={onClose}>
-            닫기
-          </button>
-        </div>
       </section>
     </div>
   )

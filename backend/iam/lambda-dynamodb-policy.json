@@ -19,6 +19,7 @@
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinMatches",
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinChatMessages",
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinPlayerMatches",
+        "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinGameStats",
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinFriends"
       ]
     },
@@ -31,6 +32,7 @@
       "Resource": [
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinChatMessages",
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinPlayerMatches",
+        "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinGameStats",
         "arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinFriends"
       ]
     },
