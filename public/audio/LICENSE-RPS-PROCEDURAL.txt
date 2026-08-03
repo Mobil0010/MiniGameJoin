@@ -1,0 +1,7 @@
+Rock Paper Scissors procedural audio
+
+The Rock Paper Scissors background music and sound effects are generated at
+runtime by MiniGameJoin's Web Audio code. They do not contain or redistribute
+third-party recordings, samples, melodies, or sound libraries.
+
+Source: src/audio/rpsAudio.ts

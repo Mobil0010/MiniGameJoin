@@ -4,6 +4,13 @@ import {
   useState,
 } from 'react'
 import { Link } from 'react-router'
+import {
+  isRpsAudioMuted,
+  setRpsAudioMuted,
+  setRpsMusic,
+  stopRpsMusic,
+  unlockRpsAudio,
+} from '../audio/rpsAudio'
 import { isAndroidNativeApp, shareAndroidInvite } from '../platform/nativeApp'
 import {
   confirmMemberEmailChange,
@@ -87,6 +94,7 @@ function YachtOnlinePage() {
   const [showMemberProfile, setShowMemberProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
   const [currentGameStats, setCurrentGameStats] = useState<OnlineGameStats | null>(null)
+  const [rpsAudioMuted, setRpsAudioMutedState] = useState(isRpsAudioMuted)
   const [profileError, setProfileError] = useState('')
   const [profileNotice, setProfileNotice] = useState('')
   const [pendingEmailChange, setPendingEmailChange] = useState('')
@@ -101,6 +109,9 @@ function YachtOnlinePage() {
   const isOnlineMatchVisible =
     room?.status === 'playing' || room?.status === 'finished'
   const isOnlineGameSelected = selectedOnlineGameId !== null
+  const shouldPlayRpsLobbyMusic =
+    selectedOnlineGameId === 'rock-paper-scissors' &&
+    (!room || ['waiting', 'ready'].includes(room.status))
   const currentRoomParticipant = room?.players.find(
     (player) => player.userId === user?.id,
   )
@@ -129,6 +140,33 @@ function YachtOnlinePage() {
       })
     return () => { active = false }
   }, [room?.status, selectedOnlineGameId, user?.id, user?.kind])
+
+  useEffect(() => {
+    if (!shouldPlayRpsLobbyMusic) {
+      return
+    }
+    if (rpsAudioMuted) {
+      stopRpsMusic()
+      return
+    }
+
+    const unlockAudio = () => unlockRpsAudio()
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    setRpsMusic('lobby')
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio)
+      stopRpsMusic()
+    }
+  }, [rpsAudioMuted, shouldPlayRpsLobbyMusic])
+
+  const toggleRpsAudio = () => {
+    const nextMuted = !rpsAudioMuted
+    setRpsAudioMutedState(nextMuted)
+    setRpsAudioMuted(nextMuted)
+    if (!nextMuted) {
+      unlockRpsAudio()
+    }
+  }
 
   useEffect(() => {
     if (
@@ -1207,6 +1245,7 @@ function YachtOnlinePage() {
               className="game-card game-card-ready online-game-card"
               type="button"
               onClick={() => {
+                unlockRpsAudio()
                 setSelectedOnlineGameId('rock-paper-scissors')
                 setNotice('')
               }}
@@ -1246,6 +1285,8 @@ function YachtOnlinePage() {
             user={user}
             onRoomChange={setRoom}
             onReturnToLobby={returnToLobby}
+            audioMuted={rpsAudioMuted}
+            onToggleAudio={toggleRpsAudio}
           />
         ) : (
           <OnlineYachtGame
@@ -1283,7 +1324,12 @@ function YachtOnlinePage() {
                   <p className="eyebrow">GAME RULES</p>
                   <h2>가위바위보 규칙</h2>
                 </div>
-                <span>{isCurrentUserRoomHost ? '방장 설정' : '규칙 확인'}</span>
+                <div className="rps-settings-heading-actions">
+                  <button type="button" onClick={toggleRpsAudio}>
+                    {rpsAudioMuted ? '🔇 소리 꺼짐' : '🔊 소리 켜짐'}
+                  </button>
+                  <span>{isCurrentUserRoomHost ? '방장 설정' : '규칙 확인'}</span>
+                </div>
               </div>
               <div className="rps-settings-grid">
                 <label>

@@ -39,6 +39,15 @@ import OnlineChatPanel from './OnlineChatPanel'
 import OnlineMatchExitDialog from './OnlineMatchExitDialog'
 import type { OnlineRoom, OnlineUser } from './types'
 import { playGameSound } from '../../audio/gameAudio'
+import {
+  isYachtMusicMuted,
+  playYachtResultSound,
+  setYachtMusic,
+  setYachtMusicMuted,
+  stopYachtMusic,
+  unlockYachtAudio,
+  type YachtMusicScene,
+} from '../../audio/yachtAudio'
 
 const CELEBRATION_DURATION_MS = 3000
 const HEARTBEAT_INTERVAL_MS = 15000
@@ -91,6 +100,7 @@ function OnlineYachtGame({
   const [errorMessage, setErrorMessage] = useState('')
   const [showExitDialog, setShowExitDialog] = useState(false)
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
+  const [musicMuted, setMusicMuted] = useState(isYachtMusicMuted)
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false)
   const [hasUnreadChat, setHasUnreadChat] = useState(false)
   const isMobileLayout = useMediaQuery(MOBILE_LAYOUT_MEDIA_QUERY)
@@ -100,6 +110,7 @@ function OnlineYachtGame({
   const previousRollSnapshotRef = useRef('')
   const localRollSnapshotRef = useRef<string | null>(null)
   const lastCelebratedVersionRef = useRef<number | null>(null)
+  const lastResultSoundRef = useRef('')
   const pageExitRequestRef = useRef<Awaited<
     ReturnType<typeof prepareOnlineForfeitOnPageExit>
   >>(null)
@@ -173,6 +184,62 @@ function OnlineYachtGame({
     finalPlayers.length > 0
       ? Math.max(...finalPlayers.map((player) => player.total))
       : 0
+  const musicScene: YachtMusicScene = room.status === 'finished'
+    ? !room.winnerId
+      ? 'draw'
+      : isSpectator || room.winnerId === user.id
+        ? 'victory'
+        : 'defeat'
+    : round >= 10
+      ? 'finale'
+      : isSpectator || !isMyTurn
+        ? 'calm'
+        : (room.rollCount ?? 0) >= 2
+          ? 'decision'
+          : 'active'
+
+  useEffect(() => {
+    if (musicMuted) {
+      stopYachtMusic()
+      return
+    }
+
+    const unlockAudio = () => unlockYachtAudio()
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('keydown', unlockAudio, { once: true })
+    setYachtMusic(musicScene)
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio)
+      window.removeEventListener('keydown', unlockAudio)
+      stopYachtMusic()
+    }
+  }, [musicMuted, musicScene])
+
+  useEffect(() => {
+    if (room.status !== 'finished') {
+      lastResultSoundRef.current = ''
+      return
+    }
+    const resultKey = `${room.code}:${room.version ?? 0}:${room.winnerId ?? 'draw'}`
+    if (lastResultSoundRef.current === resultKey) return
+    lastResultSoundRef.current = resultKey
+    if (isSpectator) return
+    playYachtResultSound(
+      !room.winnerId
+        ? 'draw'
+        : room.winnerId === user.id
+          ? 'victory'
+          : 'defeat',
+    )
+  }, [isSpectator, room.code, room.status, room.version, room.winnerId, user.id])
+
+  const toggleMusic = () => {
+    const nextMuted = !musicMuted
+    setMusicMuted(nextMuted)
+    setYachtMusicMuted(nextMuted)
+    if (!nextMuted) unlockYachtAudio()
+  }
 
   useEffect(() => {
     setAndroidGameSessionActive(room.status === 'playing' && !isSpectator)
@@ -541,6 +608,17 @@ function OnlineYachtGame({
 
           {room.status === 'finished' ? (
             <div className="game-result">
+              <div className="game-result-audio-control">
+                <button
+                  className="yacht-audio-toggle"
+                  type="button"
+                  title={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                  aria-label={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                  onClick={toggleMusic}
+                >
+                  {musicMuted ? '🔇' : '🔊'}
+                </button>
+              </div>
               <span>ONLINE FINAL RESULT</span>
               <div className="final-score-list">
                 {finalPlayers.map((player) => (
@@ -587,13 +665,24 @@ function OnlineYachtGame({
                   <span>{activePlayer?.slot ?? '-'}P TURN</span>
                   <h2>{activePlayer?.nickname ?? '플레이어'}</h2>
                 </div>
-                <div className="turn-meta">
-                  <span>
-                    라운드 {round} / {SCORE_CATEGORIES.length}
-                  </span>
-                  <strong>
-                    굴리기 {room.rollCount ?? 0} / {MAX_ROLL_COUNT}
-                  </strong>
+                <div className="yacht-panel-actions">
+                  <button
+                    className="yacht-audio-toggle"
+                    type="button"
+                    title={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                    aria-label={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                    onClick={toggleMusic}
+                  >
+                    {musicMuted ? '🔇' : '🔊'}
+                  </button>
+                  <div className="turn-meta">
+                    <span>
+                      라운드 {round} / {SCORE_CATEGORIES.length}
+                    </span>
+                    <strong>
+                      굴리기 {room.rollCount ?? 0} / {MAX_ROLL_COUNT}
+                    </strong>
+                  </div>
                 </div>
               </div>
 

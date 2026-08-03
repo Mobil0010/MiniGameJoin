@@ -1795,6 +1795,35 @@
   gap: 6px;
 }
 
+.yacht-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.yacht-audio-toggle {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #c8c4fa;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+}
+
+.yacht-audio-toggle:hover,
+.yacht-audio-toggle:focus-visible {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
 .turn-meta > span {
   color: var(--color-muted);
   font-size: 12px;
@@ -2469,12 +2498,19 @@
 }
 
 .game-result {
+  position: relative;
   min-height: 360px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+.game-result-audio-control {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .game-result > span {
@@ -3526,6 +3562,34 @@
   font-size: 0.9rem;
 }
 
+.rps-settings-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rps-settings-heading-actions > span {
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rps-settings-heading-actions > button,
+.rps-audio-toggle {
+  border: 1px solid #c8c4fa;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.rps-settings-heading-actions > button {
+  padding: 8px 11px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+
 .rps-settings-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3577,6 +3641,24 @@
   padding: 24px 28px;
 }
 
+.rps-audio-toggle {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 20px;
+}
+
+.rps-audio-toggle:hover,
+.rps-settings-heading-actions > button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
 .rps-game-header h1,
 .rps-choice-board h2,
 .rps-reveal-board h2,
@@ -3592,29 +3674,50 @@
 }
 
 .rps-timer {
+  position: relative;
   display: grid;
   min-width: 96px;
   min-height: 96px;
   place-content: center;
-  border: 6px solid var(--color-primary-soft);
   border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    var(--color-primary) var(--rps-timer-progress, 360deg),
+    var(--color-primary-soft) 0
+  );
   text-align: center;
 }
 
+.rps-timer::before {
+  position: absolute;
+  inset: 6px;
+  border-radius: inherit;
+  background: var(--color-surface);
+  content: '';
+}
+
 .rps-timer span {
+  position: relative;
+  z-index: 1;
   color: var(--color-muted);
   font-size: 0.7rem;
   font-weight: 800;
 }
 
 .rps-timer strong {
+  position: relative;
+  z-index: 1;
   color: var(--color-primary);
   font-size: 2rem;
   line-height: 1;
 }
 
 .rps-timer-urgent {
-  border-color: #fee2e2;
+  background: conic-gradient(
+    from -90deg,
+    #dc2626 var(--rps-timer-progress, 360deg),
+    #fee2e2 0
+  );
   animation: rps-pulse 0.75s ease-in-out infinite alternate;
 }
 
@@ -3782,6 +3885,12 @@
 }
 
 @media (max-width: 480px) {
+  .rps-settings-card .room-members-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .rps-settings-grid {
     grid-template-columns: 1fr;
   }

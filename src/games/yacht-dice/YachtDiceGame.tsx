@@ -13,6 +13,15 @@ import {
   setAndroidGameSessionActive,
 } from '../../platform/nativeApp'
 import { playGameSound } from '../../audio/gameAudio'
+import {
+  isYachtMusicMuted,
+  playYachtResultSound,
+  setYachtMusic,
+  setYachtMusicMuted,
+  stopYachtMusic,
+  unlockYachtAudio,
+  type YachtMusicScene,
+} from '../../audio/yachtAudio'
 
 const CELEBRATION_DURATION_MS = 3000
 
@@ -32,8 +41,10 @@ function YachtDiceGame() {
     resetGame,
   } = useYachtGame()
   const [showYachtCelebration, setShowYachtCelebration] = useState(false)
+  const [musicMuted, setMusicMuted] = useState(isYachtMusicMuted)
   const celebrationTimerRef = useRef<number | null>(null)
   const lastCheckedRollRef = useRef('')
+  const lastResultSoundRef = useRef('')
   const previousActivePlayerIdRef = useRef(activePlayer.id)
 
   const isFinished = state.status === 'finished'
@@ -49,6 +60,55 @@ function YachtDiceGame() {
   }))
   const highestTotal = Math.max(...finalPlayers.map((player) => player.total))
   const winners = finalPlayers.filter((player) => player.total === highestTotal)
+  const musicScene: YachtMusicScene = isFinished
+    ? winners.length > 1
+      ? 'draw'
+      : 'victory'
+    : round >= 10
+      ? 'finale'
+      : state.rollCount >= 2
+        ? 'decision'
+        : state.rollCount === 1
+          ? 'active'
+          : 'calm'
+
+  useEffect(() => {
+    if (musicMuted) {
+      stopYachtMusic()
+      return
+    }
+
+    const unlockAudio = () => unlockYachtAudio()
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('keydown', unlockAudio, { once: true })
+    setYachtMusic(musicScene)
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio)
+      window.removeEventListener('keydown', unlockAudio)
+      stopYachtMusic()
+    }
+  }, [musicMuted, musicScene])
+
+  useEffect(() => {
+    if (!isFinished) {
+      lastResultSoundRef.current = ''
+      return
+    }
+    const resultKey = finalPlayers
+      .map((player) => `${player.id}:${player.total}`)
+      .join('|')
+    if (lastResultSoundRef.current === resultKey) return
+    lastResultSoundRef.current = resultKey
+    playYachtResultSound(winners.length > 1 ? 'draw' : 'victory')
+  }, [finalPlayers, isFinished, winners.length])
+
+  const toggleMusic = () => {
+    const nextMuted = !musicMuted
+    setMusicMuted(nextMuted)
+    setYachtMusicMuted(nextMuted)
+    if (!nextMuted) unlockYachtAudio()
+  }
 
   useEffect(() => {
     setAndroidGameSessionActive(state.status !== 'finished')
@@ -158,19 +218,41 @@ function YachtDiceGame() {
               <span>{activePlayer.slot}P TURN</span>
               <h2>{activeNickname}</h2>
             </div>
-            <div className="turn-meta">
-              <span>
-                라운드 {round} / {SCORE_CATEGORIES.length}
-              </span>
-              <strong>
-                굴리기 {state.rollCount} / {MAX_ROLL_COUNT}
-              </strong>
+            <div className="yacht-panel-actions">
+              <button
+                className="yacht-audio-toggle"
+                type="button"
+                title={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                aria-label={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                onClick={toggleMusic}
+              >
+                {musicMuted ? '🔇' : '🔊'}
+              </button>
+              <div className="turn-meta">
+                <span>
+                  라운드 {round} / {SCORE_CATEGORIES.length}
+                </span>
+                <strong>
+                  굴리기 {state.rollCount} / {MAX_ROLL_COUNT}
+                </strong>
+              </div>
             </div>
           </div>
         )}
 
         {isFinished ? (
           <div className="game-result">
+            <div className="game-result-audio-control">
+              <button
+                className="yacht-audio-toggle"
+                type="button"
+                title={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                aria-label={musicMuted ? '배경음악 및 결과음 켜기' : '배경음악 및 결과음 끄기'}
+                onClick={toggleMusic}
+              >
+                {musicMuted ? '🔇' : '🔊'}
+              </button>
+            </div>
             <span>FINAL RESULT</span>
             <div className="final-score-list">
               {finalPlayers.map((player) => (

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  playRpsHandSound,
+  playRpsSound,
+  setRpsMusic,
+  stopRpsMusic,
+  unlockRpsAudio,
+} from '../../audio/rpsAudio'
 import {
   advanceOnlineRpsRound,
   getOnlineRoom,
@@ -19,6 +26,8 @@ interface OnlineRpsGameProps {
   user: OnlineUser
   onRoomChange: (room: OnlineRoom) => void
   onReturnToLobby: () => void
+  audioMuted: boolean
+  onToggleAudio: () => void
 }
 
 const HANDS: Array<{ hand: RpsHand; emoji: string; label: string }> = [
@@ -37,16 +46,32 @@ function OnlineRpsGame({
   user,
   onRoomChange,
   onReturnToLobby,
+  audioMuted,
+  onToggleAudio,
 }: OnlineRpsGameProps) {
   const [selectedHand, setSelectedHand] = useState<RpsHand | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [notice, setNotice] = useState('')
   const advancingVersionRef = useRef<number | null>(null)
+  const lastCountdownRef = useRef<number | null>(null)
+  const lastRevealKeyRef = useRef('')
+  const lastFinalKeyRef = useRef('')
   const currentPlayerIds = room.rpsCurrentPlayerIds ?? []
   const isCurrentPlayer = currentPlayerIds.includes(user.id)
   const hasSubmitted = (room.rpsSubmittedPlayerIds ?? []).includes(user.id)
   const settings = room.rpsSettings
+  const isUrgent = room.rpsPhase === 'selecting' && remainingSeconds <= 3
+  const timerTotalSeconds = room.rpsPhase === 'revealing'
+    ? 3
+    : settings?.timeLimitSeconds ?? 10
+  const timerProgress = Math.min(
+    1,
+    Math.max(0, remainingSeconds / timerTotalSeconds),
+  )
+  const timerStyle = {
+    '--rps-timer-progress': `${timerProgress * 360}deg`,
+  } as CSSProperties
   const playerById = useMemo(
     () => new Map(room.players.map((player) => [player.userId, player])),
     [room.players],
@@ -70,6 +95,71 @@ function OnlineRpsGame({
     const intervalId = window.setInterval(updateTimer, 250)
     return () => window.clearInterval(intervalId)
   }, [room.rpsPhase, room.rpsRevealEndsAt, room.rpsRoundDeadline, room.status])
+
+  useEffect(() => {
+    if (audioMuted) {
+      stopRpsMusic()
+      return
+    }
+    unlockRpsAudio()
+    if (room.status === 'finished') {
+      setRpsMusic(room.winnerId === user.id ? 'victory' : 'defeat')
+    } else if (room.rpsPhase === 'selecting') {
+      setRpsMusic(isUrgent ? 'urgent' : 'selecting')
+    } else {
+      stopRpsMusic()
+    }
+    return () => stopRpsMusic()
+  }, [audioMuted, isUrgent, room.rpsPhase, room.status, room.winnerId, user.id])
+
+  useEffect(() => {
+    if (
+      audioMuted ||
+      room.status !== 'playing' ||
+      room.rpsPhase !== 'selecting' ||
+      remainingSeconds < 1 ||
+      remainingSeconds > 5 ||
+      lastCountdownRef.current === remainingSeconds
+    ) return
+    lastCountdownRef.current = remainingSeconds
+    playRpsSound(remainingSeconds <= 3 ? 'countdown_urgent' : 'countdown')
+  }, [audioMuted, remainingSeconds, room.rpsPhase, room.status])
+
+  useEffect(() => {
+    if (audioMuted || room.rpsPhase !== 'revealing') return
+    const revealKey = `${room.rpsRound}:${(room.rpsRevealedSelections ?? [])
+      .map(({ userId, hand }) => `${userId}-${hand}`)
+      .join('|')}`
+    if (!room.rpsRevealedSelections?.length || lastRevealKeyRef.current === revealKey) return
+    lastRevealKeyRef.current = revealKey
+    playRpsSound('reveal')
+    const resultTimer = window.setTimeout(() => {
+      if ((room.rpsRoundWinnerIds?.length ?? 0) === 0) {
+        playRpsSound('draw')
+      } else if (isCurrentPlayer) {
+        playRpsSound(
+          room.rpsRoundWinnerIds?.includes(user.id) ? 'round_win' : 'round_lose',
+        )
+      }
+    }, 430)
+    return () => window.clearTimeout(resultTimer)
+  }, [
+    audioMuted,
+    room.rpsPhase,
+    room.rpsRevealedSelections,
+    room.rpsRound,
+    room.rpsRoundWinnerIds,
+    isCurrentPlayer,
+    user.id,
+  ])
+
+  useEffect(() => {
+    if (audioMuted || room.status !== 'finished' || !room.winnerId) return
+    const finalKey = `${room.code}:${room.version}:${room.winnerId}`
+    if (lastFinalKeyRef.current === finalKey) return
+    lastFinalKeyRef.current = finalKey
+    playRpsSound(room.winnerId === user.id ? 'match_win' : 'match_lose')
+  }, [audioMuted, room.code, room.status, room.version, room.winnerId, user.id])
 
   useEffect(() => {
     if (room.status !== 'playing') return
@@ -106,6 +196,8 @@ function OnlineRpsGame({
 
   const chooseHand = async (hand: RpsHand) => {
     if (!isCurrentPlayer || room.rpsPhase !== 'selecting' || isSubmitting) return
+    unlockRpsAudio()
+    playRpsHandSound(hand)
     setSelectedHand(hand)
     setIsSubmitting(true)
     setNotice('')
@@ -184,8 +276,20 @@ function OnlineRpsGame({
               : `라운드 ${room.rpsRound ?? 1} · 생명 ${settings?.winsRequired ?? 1}개`}
           </p>
         </div>
+        <button
+          className="rps-audio-toggle"
+          type="button"
+          aria-label={audioMuted ? '가위바위보 소리 켜기' : '가위바위보 소리 끄기'}
+          onClick={onToggleAudio}
+        >
+          {audioMuted ? '🔇' : '🔊'}
+        </button>
         {room.status === 'playing' && (
-          <div className={`rps-timer ${remainingSeconds <= 3 ? 'rps-timer-urgent' : ''}`}>
+          <div
+            className={`rps-timer ${remainingSeconds <= 3 ? 'rps-timer-urgent' : ''}`}
+            style={timerStyle}
+            aria-label={`${remainingSeconds}초 남음`}
+          >
             <span>{room.rpsPhase === 'revealing' ? '다음 라운드' : '남은 시간'}</span>
             <strong>{remainingSeconds}</strong>
           </div>

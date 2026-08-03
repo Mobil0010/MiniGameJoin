@@ -1,0 +1,7 @@
+Yacht Dice procedural audio
+
+The adaptive background music and result sounds are generated at runtime with
+the Web Audio API. They do not include third-party recordings, samples,
+melodies, or sound libraries.
+
+Source: src/audio/yachtAudio.ts

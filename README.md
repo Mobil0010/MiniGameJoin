@@ -78,6 +78,9 @@ MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 �
 - 게임 화면에서만 3D 엔진을 지연 로딩하고 애니메이션이 끝나면 렌더링 중단
 - 모바일에서도 3D 보드의 `45:14` 가로·세로 비율을 유지한 채 동일 비율로 축소
 - 주사위 굴림, KEEP, 점수 확정, 조합 완성, Yacht, 온라인 턴 전환 효과음
+- Yacht Dice의 진행 상황에 따라 달라지는 Web Audio 기반 적응형 배경음악
+- 온라인 경기 종료 시 접속자 기준 승리 팡파르·패배 효과음, 로컬 경기 승자 축하음
+- 가위바위보의 대기·선택·긴급 카운트다운·승패 상황별 절차형 배경음악
 - 확정 점수와 선택 가능한 점수를 시각적으로 구분
 
 효과음은 CC0 라이선스인 [Kenney Casino Audio](https://kenney.nl/assets/casino-audio)와 [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds)를 사용합니다. 출처 표기는 의무가 아니지만 원본과 라이선스를 확인할 수 있도록 배포 파일에 라이선스 문서를 함께 포함합니다.
