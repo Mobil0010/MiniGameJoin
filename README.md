@@ -442,8 +442,6 @@ Android 앱은 JavaScript 브리지 `MiniGameJoinNative`와 사용자 정의 이
 - Android 보안 정책상 시스템 설치 화면의 마지막 `업데이트` 확인은 사용자가 직접 눌러야 합니다.
 - 업데이트 JSON을 읽지 못해도 게임 실행은 막지 않고 기존 버전으로 계속 접속합니다.
 - `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
-- `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
-- `updateUrl`은 자동 다운로드 기능이 없던 초기 앱이 GitHub Release 페이지를 열 수 있도록 유지하는 호환 필드입니다.
 
 웹 기능만 수정했다면 앱 버전을 올릴 필요가 없습니다. 네이티브 코드를 변경해 새 APK를 배포할 때만 `versionCode`, `versionName`, 업데이트 JSON을 함께 변경합니다.
 
