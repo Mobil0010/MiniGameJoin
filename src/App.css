@@ -173,15 +173,30 @@
   gap: 24px;
 }
 
-.prototype-badge {
+.online-status-badge {
   flex: 0 0 auto;
   padding: 8px 12px;
-  color: #8a5a00;
-  background: #fff5d6;
-  border: 1px solid #f1d782;
+  color: #18794e;
+  background: #e9f8f0;
+  border: 1px solid #a7dfc2;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 800;
+}
+
+.header-back-button {
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.online-game-catalog {
+  display: grid;
+  gap: 22px;
+}
+
+.online-game-catalog > .section-title {
+  margin: 12px 0 -4px;
 }
 
 .auth-shell {
@@ -657,6 +672,17 @@
 
 .room-member-spectating {
   background: #f7f8fb;
+}
+
+.room-member-replacement {
+  background: #fff8df;
+  border-color: #e9b949;
+  box-shadow: 0 0 0 2px rgb(233 185 73 / 18%);
+}
+
+.room-member-replacement > button {
+  color: #805500;
+  background: #ffe9a6;
 }
 
 .room-member-empty {
@@ -1571,6 +1597,10 @@
   gap: 18px;
 }
 
+.single-game-grid {
+  grid-template-columns: minmax(280px, 420px);
+}
+
 .game-card {
   min-height: 300px;
   padding: 24px;
@@ -1581,6 +1611,13 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
+}
+
+.online-game-card {
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .game-card-ready {

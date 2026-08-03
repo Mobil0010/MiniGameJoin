@@ -16,9 +16,9 @@
   </p>
 </div>
 
-> **프로젝트 상태:** 온라인 테스트 단계
+> **프로젝트 상태:** 온라인 플레이 제공 중
 >
-> Yacht Dice의 핵심 게임, 회원/게스트 인증, 온라인 방, 채팅, 전적 및 기권 처리를 실제 AWS 환경에 연결해 검증하고 있습니다.
+> Yacht Dice의 회원/게스트 인증, 온라인 방, 채팅, 전적, 관전 및 기권 처리를 실제 AWS 환경에서 제공합니다.
 
 ---
 
@@ -260,10 +260,12 @@ flowchart LR
 
 | 경로 | 페이지 |
 |---|---|
-| `/` | 미니게임 홈 |
-| `/yacht-dice` | 로컬/온라인 플레이 방식 선택 |
+| `/` | 로컬 플레이/웹 멀티플레이 방식 선택 |
+| `/local` | 로컬 플레이 게임 목록 |
+| `/online` | 회원/게스트 로그인 후 온라인 게임 목록과 로비 |
+| `/yacht-dice` | 이전 링크 호환용 `/local` 이동 |
 | `/yacht-dice/local` | 한 화면 2인 Yacht Dice |
-| `/yacht-dice/online` | 회원/게스트 로그인, 로비, 온라인 게임 |
+| `/yacht-dice/online` | 이전 링크 호환용 `/online` 이동 |
 
 Cloudflare Pages는 최상위 `404.html`이 없는 React SPA를 루트 `index.html`로 연결하므로 각 경로를 직접 새로고침해도 React Router가 화면을 복원합니다.
 
@@ -554,7 +556,7 @@ type RoomStatus =
 |---|---|
 | `roomCode` | 6자리 방 초대 코드, Partition Key |
 | `status` | 대기/준비/진행/종료/취소 상태 |
-| `players` | 두 플레이어의 ID, 닉네임, 방장/준비 상태, 점수 |
+| `players` | 최대 4명의 ID, 닉네임, 방장/준비 상태, 플레이어·관전자 역할과 점수 |
 | `activePlayerId` | 현재 차례 플레이어 |
 | `dice` | 서버에서 생성한 주사위 값과 보관 상태 |
 | `rollCount` | 현재 턴의 굴림 횟수 |
@@ -667,7 +669,7 @@ MiniGameJoin/
 │  │     └─ YachtDiceGame.tsx
 │  ├─ pages/
 │  │  ├─ HomePage.tsx
-│  │  ├─ YachtModePage.tsx
+│  │  ├─ LocalGamesPage.tsx
 │  │  ├─ YachtDicePage.tsx
 │  │  └─ YachtOnlinePage.tsx
 │  ├─ platform/
@@ -1019,7 +1021,7 @@ GraphQL URL 앞부분과 AppSync `apiId`가 서로 다를 수 있습니다.
 2. Output directory가 `dist`인지
 3. 모든 `VITE_` 환경변수가 등록됐는지
 4. 브라우저 개발자 도구 Console 오류
-5. `/yacht-dice/online` 직접 접속 시 SPA 라우팅 여부
+5. `/online` 또는 호환 경로 `/yacht-dice/online` 직접 접속 시 SPA 라우팅 여부
 
 ### 파비콘이 이전 로고로 보이는 경우
 

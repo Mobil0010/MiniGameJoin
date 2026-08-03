@@ -84,10 +84,17 @@ function YachtOnlinePage() {
   const [profileError, setProfileError] = useState('')
   const [profileNotice, setProfileNotice] = useState('')
   const [pendingEmailChange, setPendingEmailChange] = useState('')
+  const [playerToReplaceId, setPlayerToReplaceId] = useState<string | null>(
+    null,
+  )
+  const [selectedOnlineGameId, setSelectedOnlineGameId] = useState<
+    'yacht-dice' | null
+  >(null)
   const appSyncConfigured = isAppSyncConfigured()
   const guestOnlineConfigured = isGuestOnlineConfigured()
   const isOnlineMatchVisible =
     room?.status === 'playing' || room?.status === 'finished'
+  const isYachtDiceSelected = selectedOnlineGameId === 'yacht-dice'
   const currentRoomParticipant = room?.players.find(
     (player) => player.userId === user?.id,
   )
@@ -96,6 +103,20 @@ function YachtOnlinePage() {
     room?.players
       .filter((player) => player.isPlaying)
       .sort((left, right) => (left.slot ?? 99) - (right.slot ?? 99)) ?? []
+
+  useEffect(() => {
+    if (
+      playerToReplaceId &&
+      (!room ||
+        !['waiting', 'ready'].includes(room.status) ||
+        !room.players.some(
+          (player) =>
+            player.userId === playerToReplaceId && player.isPlaying,
+        ))
+    ) {
+      setPlayerToReplaceId(null)
+    }
+  }, [playerToReplaceId, room])
 
   useEffect(() => {
     let isActive = true
@@ -469,6 +490,7 @@ function YachtOnlinePage() {
     clearPrototypeUser()
     setUser(null)
     setRoom(null)
+    setSelectedOnlineGameId(null)
     setJoinCode('')
     setNotice('')
   }
@@ -484,6 +506,7 @@ function YachtOnlinePage() {
       clearPrototypeUser()
       setRoom(null)
       setUser(null)
+      setSelectedOnlineGameId(null)
       setShowAccountDeletion(false)
       setJoinCode('')
       setNotice('')
@@ -544,6 +567,7 @@ function YachtOnlinePage() {
       clearPrototypeUser()
       setUser(null)
       setRoom(null)
+      setSelectedOnlineGameId(null)
       setShowMemberProfile(false)
       setAuthView('login')
       setPendingEmail(pendingEmailChange)
@@ -644,11 +668,50 @@ function YachtOnlinePage() {
     }
 
     const currentIds = selectedRoomPlayers.map((player) => player.userId)
-    const nextIds = currentIds.includes(userId)
-      ? currentIds.filter((id) => id !== userId)
-      : [...currentIds, userId]
-    if (nextIds.length > 2) {
-      setNotice('게임 플레이어는 2명까지만 선택할 수 있습니다.')
+    const isCurrentlyPlaying = currentIds.includes(userId)
+    const minimumPlayerCount = Math.min(2, room.players.length)
+    let nextIds: string[]
+
+    if (isCurrentlyPlaying && currentIds.length <= minimumPlayerCount) {
+      if (playerToReplaceId === userId) {
+        setPlayerToReplaceId(null)
+        setNotice('플레이어 교체 선택을 취소했습니다.')
+        return
+      }
+
+      if (room.players.length < 2) {
+        setNotice(
+          '플레이어는 최소 2명이어야 하므로 현재 플레이어를 관전자로 변경할 수 없습니다.',
+        )
+        return
+      }
+
+      setPlayerToReplaceId(userId)
+      setNotice(
+        '플레이어는 최소 2명이어야 하므로 바로 관전자로 변경할 수 없습니다. 교체할 관전자를 선택해주세요.',
+      )
+      return
+    }
+
+    if (!isCurrentlyPlaying && currentIds.length >= 2) {
+      if (!playerToReplaceId || !currentIds.includes(playerToReplaceId)) {
+        setNotice(
+          '현재 플레이어가 2명입니다. 먼저 교체할 플레이어의 관전자로 변경 버튼을 눌러주세요.',
+        )
+        return
+      }
+
+      nextIds = currentIds.map((id) =>
+        id === playerToReplaceId ? userId : id,
+      )
+    } else {
+      nextIds = isCurrentlyPlaying
+        ? currentIds.filter((id) => id !== userId)
+        : [...currentIds, userId]
+    }
+
+    if (nextIds.length < minimumPlayerCount || nextIds.length > 2) {
+      setNotice('게임 플레이어는 최소 2명, 최대 2명이어야 합니다.')
       return
     }
 
@@ -656,6 +719,7 @@ function YachtOnlinePage() {
     setNotice('')
     try {
       setRoom(await selectOnlinePlayers(room, nextIds))
+      setPlayerToReplaceId(null)
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : '플레이어를 선택하지 못했습니다.',
@@ -731,9 +795,22 @@ function YachtOnlinePage() {
             <Link className="brand" to="/">
               MiniGameJoin
             </Link>
-            <Link className="back-link" to="/yacht-dice">
-              ← 플레이 방식
-            </Link>
+            {isYachtDiceSelected && !room ? (
+              <button
+                className="back-link header-back-button"
+                type="button"
+                onClick={() => {
+                  setSelectedOnlineGameId(null)
+                  setNotice('')
+                }}
+              >
+                ← 온라인 게임 목록
+              </button>
+            ) : (
+              <Link className="back-link" to="/">
+                ← 플레이 방식
+              </Link>
+            )}
           </>
         )}
       </header>
@@ -743,10 +820,18 @@ function YachtOnlinePage() {
           <section className="online-heading">
             <div>
               <p className="eyebrow">ONLINE MULTIPLAYER</p>
-              <h1>Yacht Dice 온라인 로비</h1>
-              <p>계정 또는 게스트로 입장한 뒤 친구와 게임방에서 만나세요.</p>
+              <h1>
+                {isYachtDiceSelected
+                  ? 'Yacht Dice 온라인 로비'
+                  : '웹 멀티플레이'}
+              </h1>
+              <p>
+                {isYachtDiceSelected
+                  ? '방을 만들거나 초대 코드로 참가해 친구와 게임을 시작하세요.'
+                  : '로그인 또는 게스트 입장 후 플레이할 온라인 게임을 선택하세요.'}
+              </p>
             </div>
-            <span className="prototype-badge">온라인 테스트 단계</span>
+            <span className="online-status-badge">온라인 플레이 가능</span>
           </section>
 
         </>
@@ -1020,6 +1105,56 @@ function YachtOnlinePage() {
             )}
           </div>
         </section>
+      ) : !isYachtDiceSelected ? (
+        <section className="online-game-catalog">
+          <div className="lobby-profile">
+            <div>
+              <span>
+                {user.kind === 'member' ? 'MEMBER' : 'GUEST'} PLAYER
+              </span>
+              <h2>{user.nickname}</h2>
+              <p>
+                {user.kind === 'member'
+                  ? user.email
+                  : '이번 접속에서만 사용하는 게스트 프로필'}
+              </p>
+            </div>
+            <div className="profile-actions">
+              <button type="button" onClick={leaveOnline}>
+                {user.kind === 'member' ? '로그아웃' : '게스트 나가기'}
+              </button>
+            </div>
+          </div>
+
+          <div className="section-title">
+            <h2>온라인 게임 목록</h2>
+            <span>1개 플레이 가능</span>
+          </div>
+
+          <div className="game-grid single-game-grid">
+            <button
+              className="game-card game-card-ready online-game-card"
+              type="button"
+              onClick={() => {
+                setSelectedOnlineGameId('yacht-dice')
+                setNotice('')
+              }}
+            >
+              <span className="game-icon" aria-hidden="true">
+                ⚄
+              </span>
+              <div>
+                <span className="badge">실시간 온라인</span>
+                <h3>Yacht Dice</h3>
+                <p>
+                  방을 만들고 친구를 초대하거나 코드로 참가해 온라인으로
+                  플레이합니다.
+                </p>
+              </div>
+              <strong>온라인 로비 입장 →</strong>
+            </button>
+          </div>
+        </section>
       ) : room && isOnlineMatchVisible ? (
         <OnlineYachtGame
           room={room}
@@ -1050,7 +1185,9 @@ function YachtOnlinePage() {
               <span>{room.players.length} / 4</span>
             </div>
             <p className="room-role-guide">
-              방장이 2명을 게임 플레이어로 선택하며, 나머지는 관전합니다.
+              방장과 첫 입장자는 자동으로 플레이어가 되고, 이후 참가자는
+              관전합니다. 진행 중 입장한 참가자는 현재 경기에서 관전자로
+              고정됩니다.
             </p>
             <div className="room-member-grid">
               {Array.from({ length: 4 }, (_, index) => {
@@ -1071,6 +1208,10 @@ function YachtOnlinePage() {
                       participant.isPlaying
                         ? 'room-member-playing'
                         : 'room-member-spectating'
+                    } ${
+                      participant.userId === playerToReplaceId
+                        ? 'room-member-replacement'
+                        : ''
                     }`}
                     key={participant.userId}
                   >
@@ -1097,8 +1238,12 @@ function YachtOnlinePage() {
                         }
                       >
                         {participant.isPlaying
-                          ? '관전자로 변경'
-                          : '플레이어로 선택'}
+                          ? participant.userId === playerToReplaceId
+                            ? '교체 선택 취소'
+                            : '관전자로 변경'
+                          : playerToReplaceId
+                            ? '이 플레이어로 교체'
+                            : '플레이어로 선택'}
                       </button>
                     )}
                   </div>

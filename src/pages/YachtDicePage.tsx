@@ -42,8 +42,8 @@ function YachtDicePage() {
           <Link className="brand" to="/">
             MiniGameJoin
           </Link>
-          <Link className="back-link" to="/yacht-dice">
-            ← 플레이 방식
+          <Link className="back-link" to="/local">
+            ← 로컬 게임 목록
           </Link>
         </header>
 

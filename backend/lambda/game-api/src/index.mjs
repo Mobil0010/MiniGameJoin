@@ -930,9 +930,18 @@ async function joinRoom(event) {
   }
 
   const epoch = nowEpochSeconds()
+  const selectedPlayers = getGamePlayers(room)
+  const joinsAsPlayer =
+    room.status !== 'playing' && selectedPlayers.length < 2
+  const occupiedSlots = new Set(
+    selectedPlayers.map((player) => player.slot).filter(Boolean),
+  )
+  const assignedSlot = joinsAsPlayer
+    ? [1, 2].find((slot) => !occupiedSlots.has(slot)) ?? 2
+    : null
   const nextRoom = {
     ...room,
-    status: room.status,
+    status: joinsAsPlayer ? 'waiting' : room.status,
     players: [
       ...room.players,
       {
@@ -941,8 +950,8 @@ async function joinRoom(event) {
         isGuest,
         isHost: false,
         isReady: false,
-        slot: null,
-        isPlaying: false,
+        slot: assignedSlot,
+        isPlaying: joinsAsPlayer,
         scores: [],
       },
     ],
@@ -1035,6 +1044,12 @@ async function selectPlayers(event) {
   const playerIds = [...new Set(event.arguments.playerIds ?? [])]
   if (playerIds.length > 2) {
     throw new Error('게임 플레이어는 최대 2명까지 선택할 수 있습니다.')
+  }
+  const minimumPlayerCount = Math.min(2, room.players.length)
+  if (playerIds.length < minimumPlayerCount) {
+    throw new Error(
+      '플레이어는 최소 2명이어야 하므로 현재 플레이어를 관전자로 변경할 수 없습니다.',
+    )
   }
   if (
     playerIds.some(
