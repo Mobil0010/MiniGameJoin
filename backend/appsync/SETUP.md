@@ -135,6 +135,9 @@ Payload: {"source":"minigamejoin.presence-check"}
 게임 시작 후 들어온 참가자는 기존 플레이어와 턴에 영향을 주지 않는 관전자로
 추가됩니다.
 
+게임 종료 후 `returnToWaitingRoom`으로 같은 방에 복귀할 때는 해당 방의 이전
+대기실 채팅과 게임 채팅을 모두 삭제합니다. 방 코드와 참가자 구성은 유지됩니다.
+
 ## 8. React 환경 변수
 
 AppSync의 `Settings`에서 GraphQL API URL을 복사합니다.

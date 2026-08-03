@@ -603,6 +603,7 @@ function OnlineYachtGame({
                   !isMyTurn || (room.rollCount ?? 0) === 0 || isSubmitting
                 }
                 isRolling={isRollingDice || isRemoteDiceRolling}
+                registeredScores={activePlayer?.scores}
                 onToggleHold={toggleHold}
               />
               <p className="game-guide" aria-live="polite">

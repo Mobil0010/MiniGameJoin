@@ -860,6 +860,52 @@ async function sendChatMessage(event) {
   return message
 }
 
+async function deleteRoomChatMessages(roomCode) {
+  let exclusiveStartKey
+
+  do {
+    const result = await documentClient.send(
+      new QueryCommand({
+        TableName: CHAT_MESSAGES_TABLE,
+        KeyConditionExpression: 'roomCode = :roomCode',
+        ExpressionAttributeValues: {
+          ':roomCode': roomCode,
+        },
+        ProjectionExpression: 'roomCode, messageKey',
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    )
+    const deleteRequests = (result.Items ?? []).map((item) => ({
+      DeleteRequest: {
+        Key: {
+          roomCode: item.roomCode,
+          messageKey: item.messageKey,
+        },
+      },
+    }))
+
+    for (let index = 0; index < deleteRequests.length; index += 25) {
+      let pendingRequests = deleteRequests.slice(index, index + 25)
+      for (let attempt = 0; pendingRequests.length > 0 && attempt < 5; attempt += 1) {
+        const response = await documentClient.send(
+          new BatchWriteCommand({
+            RequestItems: {
+              [CHAT_MESSAGES_TABLE]: pendingRequests,
+            },
+          }),
+        )
+        pendingRequests = response.UnprocessedItems?.[CHAT_MESSAGES_TABLE] ?? []
+      }
+
+      if (pendingRequests.length > 0) {
+        throw new Error('이전 채팅을 모두 초기화하지 못했습니다. 다시 시도해 주세요.')
+      }
+    }
+
+    exclusiveStartKey = result.LastEvaluatedKey
+  } while (exclusiveStartKey)
+}
+
 async function authorizeRoomSubscription(event) {
   await readParticipantRoom(event)
   return null
@@ -1125,6 +1171,8 @@ async function returnToWaitingRoom(event) {
   if (room.status !== 'finished') {
     throw new Error('종료된 게임에서만 대기실로 돌아갈 수 있습니다.')
   }
+
+  await deleteRoomChatMessages(room.roomCode)
 
   const timestamp = nowIso()
   const epoch = nowEpochSeconds()

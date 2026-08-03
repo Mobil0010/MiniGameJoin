@@ -206,6 +206,7 @@ function YachtDiceGame() {
               dice={state.dice}
               disabled={state.rollCount === 0 || isRolling}
               isRolling={isRolling}
+              registeredScores={activePlayer.scores}
               onToggleHold={toggleHold}
             />
             <p className="game-guide" aria-live="polite">

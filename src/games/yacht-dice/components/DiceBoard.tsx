@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react'
 import ThreeDiceBoard from './ThreeDiceBoard'
 import { getDiceCombinationAnnouncement } from '../logic/getDiceCombination'
-import type { DiceValue, Die } from '../types/yacht'
+import type { DiceValue, Die, ScoreCard } from '../types/yacht'
 import { playGameSound } from '../../../audio/gameAudio'
 
 export interface DiceBoardProps {
   dice: readonly Die[]
   disabled?: boolean
   isRolling?: boolean
+  registeredScores?: ScoreCard
   onToggleHold: (dieId: number) => void
 }
 
@@ -15,6 +16,7 @@ function DiceBoard({
   dice,
   disabled = false,
   isRolling = false,
+  registeredScores = {},
   onToggleHold,
 }: DiceBoardProps) {
   const lastSoundKeyRef = useRef('')
@@ -24,7 +26,7 @@ function DiceBoard({
   )
   const combination =
     !isRolling && hasCompleteDice
-      ? getDiceCombinationAnnouncement(diceValues)
+      ? getDiceCombinationAnnouncement(diceValues, registeredScores)
       : null
   const diceValueKey = diceValues.join('-')
 
