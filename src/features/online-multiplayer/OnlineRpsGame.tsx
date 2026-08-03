@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   advanceOnlineRpsRound,
   getOnlineRoom,
+  leaveOnlineRoom,
   returnOnlineRoomToWaiting,
   sendOnlineHeartbeat,
   submitOnlineRpsHand,
@@ -154,6 +155,19 @@ function OnlineRpsGame({
     }
   }
 
+  const leaveFinishedRoom = async () => {
+    setIsSubmitting(true)
+    setNotice('')
+    try {
+      await leaveOnlineRoom(room)
+      onReturnToLobby()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '게임방에서 나가지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const winner = room.players.find((player) => player.userId === room.winnerId)
   const isDraw = room.rpsPhase === 'revealing' &&
     (room.rpsRoundWinnerIds?.length ?? 0) === 0
@@ -187,7 +201,12 @@ function OnlineRpsGame({
             <button type="button" disabled={isSubmitting} onClick={returnToWaitingRoom}>
               {isSubmitting ? '이동 중…' : '같은 방에서 다시 하기'}
             </button>
-            <button className="secondary-action" type="button" onClick={onReturnToLobby}>
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => void leaveFinishedRoom()}
+            >
               온라인 로비로 나가기
             </button>
           </div>

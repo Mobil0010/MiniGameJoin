@@ -441,10 +441,12 @@ function YachtOnlinePage() {
 
     try {
       if (!selectedOnlineGameId) return
-      setRoom(await createOnlineRoom(
+      const nextRoom = await createOnlineRoom(
         selectedOnlineGameId,
         user.kind === 'guest' ? user.nickname : undefined,
-      ))
+      )
+      setSelectedOnlineGameId(nextRoom.gameId)
+      setRoom(nextRoom)
     } catch (error) {
       setNotice(
         error instanceof Error

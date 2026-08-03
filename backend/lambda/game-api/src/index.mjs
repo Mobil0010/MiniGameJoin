@@ -627,6 +627,128 @@ async function getRoom(roomCode) {
   }
 }
 
+async function getActiveMemberRoom(profile) {
+  const roomCode = profile.activeRoomCode
+  if (!roomCode) {
+    return null
+  }
+
+  const result = await documentClient.send(new GetCommand({
+    TableName: ROOMS_TABLE,
+    Key: { roomCode },
+    ConsistentRead: true,
+  }))
+  const room = result.Item
+  const isActive =
+    room &&
+    ['waiting', 'ready', 'playing'].includes(room.status) &&
+    room.players?.some((player) => player.userId === profile.userId)
+
+  if (isActive) {
+    return {
+      ...room,
+      maxPlayers: room.maxPlayers ?? 4,
+      rpsCurrentPlayerIds: room.rpsCurrentPlayerIds ?? [],
+      rpsSubmittedPlayerIds: room.rpsSubmittedPlayerIds ?? [],
+      rpsRevealedSelections: room.rpsRevealedSelections ?? [],
+      rpsPlayerStates: room.rpsPlayerStates ?? [],
+      rpsRoundWinnerIds: room.rpsRoundWinnerIds ?? [],
+    }
+  }
+
+  try {
+    await documentClient.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: profile.userId },
+      UpdateExpression: 'SET updatedAt = :updatedAt REMOVE activeRoomCode',
+      ConditionExpression: 'activeRoomCode = :roomCode',
+      ExpressionAttributeValues: {
+        ':roomCode': roomCode,
+        ':updatedAt': nowIso(),
+      },
+    }))
+  } catch (error) {
+    if (error?.name !== 'ConditionalCheckFailedException') {
+      throw error
+    }
+  }
+  return null
+}
+
+async function putRoomAndClaimMembership(room, expectedVersion, userId) {
+  try {
+    await documentClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: ROOMS_TABLE,
+            Item: room,
+            ConditionExpression: '#version = :expectedVersion',
+            ExpressionAttributeNames: { '#version': 'version' },
+            ExpressionAttributeValues: { ':expectedVersion': expectedVersion },
+          },
+        },
+        {
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression:
+              'SET activeRoomCode = :roomCode, updatedAt = :updatedAt',
+            ConditionExpression:
+              'attribute_exists(userId) AND (attribute_not_exists(activeRoomCode) OR activeRoomCode = :roomCode)',
+            ExpressionAttributeValues: {
+              ':roomCode': room.roomCode,
+              ':updatedAt': room.updatedAt,
+            },
+          },
+        },
+      ],
+    }))
+  } catch (error) {
+    if (error?.name === 'TransactionCanceledException') {
+      throw new Error(
+        '이미 다른 게임방에 참가 중이거나 방 상태가 변경되었습니다. 기존 방에서 나온 뒤 다시 시도해 주세요.',
+      )
+    }
+    throw error
+  }
+  return room
+}
+
+async function putRoomAndReleaseMemberships(room, expectedVersion, userIds) {
+  const uniqueUserIds = [...new Set(userIds)].filter(Boolean)
+  try {
+    await documentClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: ROOMS_TABLE,
+            Item: room,
+            ConditionExpression: '#version = :expectedVersion',
+            ExpressionAttributeNames: { '#version': 'version' },
+            ExpressionAttributeValues: { ':expectedVersion': expectedVersion },
+          },
+        },
+        ...uniqueUserIds.map((userId) => ({
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression: 'SET updatedAt = :updatedAt REMOVE activeRoomCode',
+            ConditionExpression: 'attribute_exists(userId)',
+            ExpressionAttributeValues: { ':updatedAt': room.updatedAt },
+          },
+        })),
+      ],
+    }))
+  } catch (error) {
+    if (error?.name === 'TransactionCanceledException') {
+      throw new Error('게임방 상태가 변경되었습니다. 최신 상태에서 다시 시도해 주세요.')
+    }
+    throw error
+  }
+  return room
+}
+
 async function putVersionedRoom(room, expectedVersion) {
   try {
     await documentClient.send(
@@ -998,9 +1120,17 @@ function advanceRevealedRpsRound(room) {
 
 async function createRoom(event) {
   const { userId, isGuest } = requireIdentity(event)
+  const profile = isGuest ? null : await getProfile(userId)
   const nickname = isGuest
     ? normalizeNickname(event.arguments.guestNickname)
-    : (await getProfile(userId)).nickname
+    : profile.nickname
+
+  if (profile) {
+    const activeRoom = await getActiveMemberRoom(profile)
+    if (activeRoom) {
+      return activeRoom
+    }
+  }
 
   const gameId = String(event.arguments.gameId ?? 'yacht-dice')
   if (!['yacht-dice', 'rock-paper-scissors'].includes(gameId)) {
@@ -1051,18 +1181,55 @@ async function createRoom(event) {
     }
 
     try {
-      await documentClient.send(
-        new PutCommand({
-          TableName: ROOMS_TABLE,
-          Item: room,
-          ConditionExpression: 'attribute_not_exists(roomCode)',
-        }),
-      )
+      if (isGuest) {
+        await documentClient.send(
+          new PutCommand({
+            TableName: ROOMS_TABLE,
+            Item: room,
+            ConditionExpression: 'attribute_not_exists(roomCode)',
+          }),
+        )
+      } else {
+        await documentClient.send(new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: {
+                TableName: ROOMS_TABLE,
+                Item: room,
+                ConditionExpression: 'attribute_not_exists(roomCode)',
+              },
+            },
+            {
+              Update: {
+                TableName: USERS_TABLE,
+                Key: { userId },
+                UpdateExpression:
+                  'SET activeRoomCode = :roomCode, updatedAt = :updatedAt',
+                ConditionExpression:
+                  'attribute_exists(userId) AND attribute_not_exists(activeRoomCode)',
+                ExpressionAttributeValues: {
+                  ':roomCode': roomCode,
+                  ':updatedAt': timestamp,
+                },
+              },
+            },
+          ],
+        }))
+      }
 
       return room
     } catch (error) {
-      if (error?.name !== 'ConditionalCheckFailedException') {
+      if (
+        !['ConditionalCheckFailedException', 'TransactionCanceledException']
+          .includes(error?.name)
+      ) {
         throw error
+      }
+      if (!isGuest) {
+        const activeRoom = await getActiveMemberRoom(await getProfile(userId))
+        if (activeRoom) {
+          return activeRoom
+        }
       }
     }
   }
@@ -1071,11 +1238,11 @@ async function createRoom(event) {
 }
 
 async function readParticipantRoom(event) {
-  const { userId } = requireIdentity(event)
+  const { userId, isGuest } = requireIdentity(event)
   const room = await getRoom(event.arguments.roomCode)
   requireParticipant(room, userId)
 
-  return { room, userId }
+  return { room, userId, isGuest }
 }
 
 async function listChatMessages(event) {
@@ -1196,12 +1363,33 @@ async function authorizeRoomSubscription(event) {
 
 async function joinRoom(event) {
   const { userId, isGuest } = requireIdentity(event)
+  const profile = isGuest ? null : await getProfile(userId)
   const nickname = isGuest
     ? normalizeNickname(event.arguments.guestNickname)
-    : (await getProfile(userId)).nickname
-  const room = await getRoom(event.arguments.roomCode)
+    : profile.nickname
+  const requestedRoomCode = normalizeRoomCode(event.arguments.roomCode)
+  const activeRoom = profile ? await getActiveMemberRoom(profile) : null
+  if (activeRoom && activeRoom.roomCode !== requestedRoomCode) {
+    throw new Error(
+      `이미 ${activeRoom.roomCode} 게임방에 참가 중입니다. 기존 방에서 나온 뒤 다른 방에 참가해 주세요.`,
+    )
+  }
+  const room = activeRoom ?? await getRoom(requestedRoomCode)
 
   if (room.players.some((player) => player.userId === userId)) {
+    if (profile && !activeRoom) {
+      await documentClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET activeRoomCode = :roomCode, updatedAt = :updatedAt',
+        ConditionExpression:
+          'attribute_exists(userId) AND (attribute_not_exists(activeRoomCode) OR activeRoomCode = :roomCode)',
+        ExpressionAttributeValues: {
+          ':roomCode': room.roomCode,
+          ':updatedAt': nowIso(),
+        },
+      }))
+    }
     return room
   }
 
@@ -1251,11 +1439,13 @@ async function joinRoom(event) {
     expiresAt: epoch + ROOM_TTL_SECONDS,
   }
 
-  return putVersionedRoom(nextRoom, room.version)
+  return isGuest
+    ? putVersionedRoom(nextRoom, room.version)
+    : putRoomAndClaimMembership(nextRoom, room.version, userId)
 }
 
 async function leaveRoom(event) {
-  const { room, userId } = await readParticipantRoom(event)
+  const { room, userId, isGuest } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
 
   const leavingPlayer = requireParticipant(room, userId)
@@ -1282,7 +1472,18 @@ async function leaveRoom(event) {
         expiresAt: epoch + ROOM_TTL_SECONDS,
       }
 
-  return putVersionedRoom(nextRoom, room.version)
+  const memberIdsToRelease = nextRoom.status === 'cancelled'
+    ? room.players
+        .filter((player) => player.isGuest !== true)
+        .map((player) => player.userId)
+    : isGuest ? [] : [userId]
+  return memberIdsToRelease.length > 0
+    ? putRoomAndReleaseMemberships(
+        nextRoom,
+        room.version,
+        memberIdsToRelease,
+      )
+    : putVersionedRoom(nextRoom, room.version)
 }
 
 async function setReady(event) {
