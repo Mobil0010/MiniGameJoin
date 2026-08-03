@@ -44,7 +44,6 @@ import {
   selectOnlinePlayers,
   setOnlineReady,
   startOnlineGame,
-  updateOnlineRpsSettings,
   updateOnlineNickname,
 } from '../features/online-multiplayer/appSyncApi'
 import OnlineYachtGame from '../features/online-multiplayer/OnlineYachtGame'
@@ -66,7 +65,6 @@ import type {
   OnlineGameId,
   OnlineGameStats,
   OnlineUser,
-  RpsSettings,
 } from '../features/online-multiplayer/types'
 
 type AuthView =
@@ -107,7 +105,9 @@ function YachtOnlinePage() {
   const appSyncConfigured = isAppSyncConfigured()
   const guestOnlineConfigured = isGuestOnlineConfigured()
   const isOnlineMatchVisible =
-    room?.status === 'playing' || room?.status === 'finished'
+    room?.gameId === 'rock-paper-scissors' ||
+    room?.status === 'playing' ||
+    room?.status === 'finished'
   const isOnlineGameSelected = selectedOnlineGameId !== null
   const shouldPlayRpsLobbyMusic =
     selectedOnlineGameId === 'rock-paper-scissors' &&
@@ -797,23 +797,6 @@ function YachtOnlinePage() {
     }
   }
 
-  const updateRpsRule = async (patch: Partial<RpsSettings>) => {
-    if (!room?.rpsSettings || !isCurrentUserRoomHost) return
-    setIsLobbySubmitting(true)
-    setNotice('')
-    try {
-      setRoom(await updateOnlineRpsSettings(room, {
-        ...room.rpsSettings,
-        ...patch,
-      }))
-      setNotice('규칙을 변경했습니다. 참가자들은 다시 준비해 주세요.')
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : '규칙을 변경하지 못했습니다.')
-    } finally {
-      setIsLobbySubmitting(false)
-    }
-  }
-
   const startGame = async () => {
     if (!room || !user) {
       return
@@ -870,10 +853,12 @@ function YachtOnlinePage() {
       )}
 
       <header className="site-header">
-        {room?.status === 'playing' ? (
+        {room?.status === 'playing' || room?.gameId === 'rock-paper-scissors' ? (
           <>
             <span className="brand">MiniGameJoin</span>
-            <span className="back-link">온라인 게임 진행 중</span>
+            <span className="back-link">
+              {room?.status === 'playing' ? '온라인 게임 진행 중' : '가위바위보 대기 중'}
+            </span>
           </>
         ) : (
           <>
@@ -1316,88 +1301,6 @@ function YachtOnlinePage() {
               </button>
             )}
           </div>
-
-          {room.gameId === 'rock-paper-scissors' && room.rpsSettings && (
-            <div className="rps-settings-card">
-              <div className="room-members-heading">
-                <div>
-                  <p className="eyebrow">GAME RULES</p>
-                  <h2>가위바위보 규칙</h2>
-                </div>
-                <div className="rps-settings-heading-actions">
-                  <button type="button" onClick={toggleRpsAudio}>
-                    {rpsAudioMuted ? '🔇 소리 꺼짐' : '🔊 소리 켜짐'}
-                  </button>
-                  <span>{isCurrentUserRoomHost ? '방장 설정' : '규칙 확인'}</span>
-                </div>
-              </div>
-              <div className="rps-settings-grid">
-                <label>
-                  게임 방식
-                  <select
-                    value={room.rpsSettings.mode}
-                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
-                    onChange={(event) => void updateRpsRule({
-                      mode: event.target.value as RpsSettings['mode'],
-                    })}
-                  >
-                    <option value="tournament">1:1 토너먼트</option>
-                    <option value="all-play">전체 난투전</option>
-                  </select>
-                </label>
-                <label>
-                  선택 제한시간
-                  <select
-                    value={room.rpsSettings.timeLimitSeconds}
-                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
-                    onChange={(event) => void updateRpsRule({
-                      timeLimitSeconds: Number(event.target.value) as RpsSettings['timeLimitSeconds'],
-                    })}
-                  >
-                    {[5, 10, 15, 20].map((seconds) => (
-                      <option value={seconds} key={seconds}>{seconds}초</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  {room.rpsSettings.mode === 'tournament' ? '경기 승리 조건' : '플레이어 생명'}
-                  <select
-                    value={room.rpsSettings.winsRequired}
-                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
-                    onChange={(event) => void updateRpsRule({
-                      winsRequired: Number(event.target.value) as RpsSettings['winsRequired'],
-                    })}
-                  >
-                    {[1, 2, 3].map((count) => (
-                      <option value={count} key={count}>
-                        {room.rpsSettings?.mode === 'tournament'
-                          ? `${count}승 선취`
-                          : `${count}개`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  방 정원
-                  <select
-                    value={room.rpsSettings.maxPlayers}
-                    disabled={!isCurrentUserRoomHost || isLobbySubmitting}
-                    onChange={(event) => void updateRpsRule({
-                      maxPlayers: Number(event.target.value) as RpsSettings['maxPlayers'],
-                    })}
-                  >
-                    {[2, 3, 4, 5, 6].map((count) => (
-                      <option value={count} key={count}>{count}명</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <p>
-                시간 안에 고르지 않으면 자동으로 무작위 손이 선택됩니다.
-                규칙을 바꾸면 모든 참가자의 준비가 해제됩니다.
-              </p>
-            </div>
-          )}
 
           <div className="room-members">
             <div className="room-members-heading">

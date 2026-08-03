@@ -235,6 +235,15 @@ const FORFEIT_ON_PAGE_EXIT_MUTATION = `
   }
 `
 
+const LEAVE_ON_PAGE_EXIT_MUTATION = `
+  mutation LeaveRoom($roomCode: ID!, $expectedVersion: Int!) {
+    leaveRoom(roomCode: $roomCode, expectedVersion: $expectedVersion) {
+      roomCode
+      status
+    }
+  }
+`
+
 export class OnlineApiError extends Error {
   constructor(message: string) {
     super(message)
@@ -932,6 +941,32 @@ export function sendOnlineForfeitOnPageExit(
   if (!request) {
     return
   }
+
+  void fetch(appSyncGraphqlUrl, {
+    method: 'POST',
+    headers: request.headers,
+    body: request.body,
+    keepalive: true,
+  }).catch(() => undefined)
+}
+
+export async function prepareOnlineLeaveOnPageExit(
+  room: OnlineRoom,
+): Promise<SignedAppSyncRequest | null> {
+  if (!isAppSyncConfigured() || typeof room.version !== 'number') {
+    return null
+  }
+
+  return createGraphqlRequest(LEAVE_ON_PAGE_EXIT_MUTATION, {
+    roomCode: room.code,
+    expectedVersion: room.version,
+  })
+}
+
+export function sendOnlineLeaveOnPageExit(
+  request: SignedAppSyncRequest | null,
+): void {
+  if (!request) return
 
   void fetch(appSyncGraphqlUrl, {
     method: 'POST',

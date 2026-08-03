@@ -45,7 +45,6 @@ const DEFAULT_HISTORY_LIMIT = 20
 const MAX_QUERY_LIMIT = 50
 const ONLINE_WINDOW_SECONDS = 75
 const MAX_ROOM_PARTICIPANTS = 6
-const RPS_REVEAL_MILLISECONDS = 2500
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -1044,7 +1043,7 @@ function revealRpsRound(room, fillMissing = false) {
     rpsRoundWinnerIds: result.winnerIds,
     rpsPlayerStates: playerStates,
     rpsRoundDeadline: undefined,
-    rpsRevealEndsAt: new Date(Date.now() + RPS_REVEAL_MILLISECONDS).toISOString(),
+    rpsRevealEndsAt: undefined,
     _rpsSelections: selections,
     _rpsMatchWinnerId: matchWinnerId,
     _rpsGameWinnerId: gameWinnerId,
@@ -1825,7 +1824,7 @@ async function submitRpsHand(event) {
 }
 
 async function advanceRpsRound(event) {
-  const { room } = await readParticipantRoom(event)
+  const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
   if (room.gameId !== 'rock-paper-scissors' || room.status !== 'playing') {
     return room
@@ -1838,8 +1837,9 @@ async function advanceRpsRound(event) {
     }
     advancedRoom = revealRpsRound(room, true)
   } else if (room.rpsPhase === 'revealing') {
-    if (new Date(room.rpsRevealEndsAt).getTime() > Date.now()) {
-      return room
+    const participant = requireParticipant(room, userId)
+    if (!participant.isHost) {
+      throw new Error('방장만 다음 턴으로 진행할 수 있습니다.')
     }
     advancedRoom = advanceRevealedRpsRound(room)
   } else {
