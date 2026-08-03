@@ -27,6 +27,7 @@ export interface OnlineRoomPlayer {
   nickname: string
   isHost: boolean
   isReady: boolean
+  isPlaying: boolean
   slot?: 1 | 2
   scores?: ScoreCard
 }
@@ -37,13 +38,39 @@ export interface OnlineRoom {
   gameId: 'yacht-dice'
   status: OnlineRoomStatus
   players: OnlineRoomPlayer[]
-  maxPlayers: 2
+  maxPlayers: 4
   activePlayerId?: string | null
   dice?: Die[]
   rollCount?: number
   version?: number
   winnerId?: string | null
   finishReason?: OnlineMatchEndReason | null
+}
+
+export type OnlineChatChannel = 'lobby' | 'game'
+
+export interface FriendSummary {
+  userId: string
+  nickname: string
+  isOnline: boolean
+  lastSeenAt: string | null
+  invitedRoomCode: string | null
+}
+
+export interface FriendRequestSummary {
+  userId: string
+  nickname: string
+  requestedAt: string
+}
+
+export interface FriendDashboard {
+  friends: FriendSummary[]
+  incomingRequests: FriendRequestSummary[]
+}
+
+export interface MemberSearchResult {
+  userId: string
+  nickname: string
 }
 
 export type OnlineMatchStatus = 'playing' | 'finished'

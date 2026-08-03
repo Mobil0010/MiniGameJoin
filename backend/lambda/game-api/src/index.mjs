@@ -1,6 +1,7 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import {
+  BatchGetCommand,
   BatchWriteCommand,
   DeleteCommand,
   DynamoDBDocumentClient,
@@ -24,6 +25,7 @@ const ROOMS_TABLE = process.env.ROOMS_TABLE
 const MATCHES_TABLE = process.env.MATCHES_TABLE
 const CHAT_MESSAGES_TABLE = process.env.CHAT_MESSAGES_TABLE
 const PLAYER_MATCHES_TABLE = process.env.PLAYER_MATCHES_TABLE
+const FRIENDS_TABLE = process.env.FRIENDS_TABLE
 const COGNITO_IDENTITY_POOL_ID = process.env.COGNITO_IDENTITY_POOL_ID
 const ROOM_CODE_CHARACTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const ROOM_TTL_SECONDS = 24 * 60 * 60
@@ -33,6 +35,8 @@ const DISCONNECT_GRACE_SECONDS = 90
 const DEFAULT_CHAT_LIMIT = 50
 const DEFAULT_HISTORY_LIMIT = 20
 const MAX_QUERY_LIMIT = 50
+const ONLINE_WINDOW_SECONDS = 75
+const MAX_ROOM_PARTICIPANTS = 4
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -40,6 +44,7 @@ for (const [name, value] of Object.entries({
   MATCHES_TABLE,
   CHAT_MESSAGES_TABLE,
   PLAYER_MATCHES_TABLE,
+  FRIENDS_TABLE,
   COGNITO_IDENTITY_POOL_ID,
 })) {
   if (!value) {
@@ -83,6 +88,14 @@ function normalizeChatText(value) {
   }
 
   return text
+}
+
+function normalizeChatChannel(value) {
+  const channel = String(value ?? '').trim().toLowerCase()
+  if (!['lobby', 'game'].includes(channel)) {
+    throw new Error('채팅 채널이 올바르지 않습니다.')
+  }
+  return channel
 }
 
 function normalizeQueryLimit(value, fallback) {
@@ -176,6 +189,30 @@ function requireParticipant(room, userId) {
   return player
 }
 
+function getGamePlayers(room) {
+  const selected = room.players
+    .filter((player) => player.isPlaying === true)
+    .sort((left, right) => (left.slot ?? 99) - (right.slot ?? 99))
+
+  if (selected.length > 0) {
+    return selected
+  }
+
+  return room.players
+    .filter((player) => player.slot === 1 || player.slot === 2)
+    .sort((left, right) => left.slot - right.slot)
+}
+
+function requireGamePlayer(room, userId) {
+  const player = getGamePlayers(room).find(
+    (candidate) => candidate.userId === userId,
+  )
+  if (!player) {
+    throw new Error('관전자는 게임 조작을 할 수 없습니다.')
+  }
+  return player
+}
+
 function createRoomCode() {
   return Array.from({ length: 6 }, () => {
     return ROOM_CODE_CHARACTERS[randomInt(0, ROOM_CODE_CHARACTERS.length)]
@@ -212,6 +249,300 @@ async function getProfile(userId) {
   }
 
   return result.Item
+}
+
+async function getProfiles(userIds) {
+  const uniqueIds = [...new Set(userIds)].filter(Boolean)
+  if (uniqueIds.length === 0) {
+    return new Map()
+  }
+
+  const result = await documentClient.send(
+    new BatchGetCommand({
+      RequestItems: {
+        [USERS_TABLE]: {
+          Keys: uniqueIds.map((userId) => ({ userId })),
+          ProjectionExpression: 'userId, nickname, lastSeenAt',
+        },
+      },
+    }),
+  )
+
+  return new Map(
+    (result.Responses?.[USERS_TABLE] ?? []).map((profile) => [
+      profile.userId,
+      profile,
+    ]),
+  )
+}
+
+async function listFriendRelations(userId) {
+  const result = await documentClient.send(
+    new QueryCommand({
+      TableName: FRIENDS_TABLE,
+      KeyConditionExpression: 'ownerUserId = :ownerUserId',
+      ExpressionAttributeValues: {
+        ':ownerUserId': userId,
+      },
+    }),
+  )
+  return result.Items ?? []
+}
+
+async function touchPresence(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  if (isGuest) {
+    throw new Error('친구 기능은 로그인 회원만 사용할 수 있습니다.')
+  }
+
+  await documentClient.send(
+    new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'SET lastSeenAt = :lastSeenAt, updatedAt = :updatedAt',
+      ConditionExpression: 'attribute_exists(userId)',
+      ExpressionAttributeValues: {
+        ':lastSeenAt': nowIso(),
+        ':updatedAt': nowIso(),
+      },
+    }),
+  )
+  return true
+}
+
+async function friendDashboard(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  if (isGuest) {
+    throw new Error('친구 기능은 로그인 회원만 사용할 수 있습니다.')
+  }
+
+  const relations = await listFriendRelations(userId)
+  const profiles = await getProfiles(relations.map((item) => item.friendUserId))
+  const onlineCutoff = Date.now() - ONLINE_WINDOW_SECONDS * 1000
+  const inviteCutoff = Date.now() - ROOM_TTL_SECONDS * 1000
+
+  const friends = relations
+    .filter((item) => item.status === 'accepted')
+    .map((item) => {
+      const profile = profiles.get(item.friendUserId)
+      if (!profile) {
+        return null
+      }
+      const lastSeenAt = profile.lastSeenAt ?? null
+      return {
+        userId: profile.userId,
+        nickname: profile.nickname,
+        isOnline:
+          Boolean(lastSeenAt) && new Date(lastSeenAt).getTime() >= onlineCutoff,
+        lastSeenAt,
+        invitedRoomCode:
+          item.invitedRoomCode &&
+          item.invitedAt &&
+          new Date(item.invitedAt).getTime() >= inviteCutoff
+            ? item.invitedRoomCode
+            : null,
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.isOnline !== right.isOnline) {
+        return left.isOnline ? -1 : 1
+      }
+      return left.nickname.localeCompare(right.nickname, 'ko')
+    })
+
+  const incomingRequests = relations
+    .filter((item) => item.status === 'incoming')
+    .map((item) => {
+      const profile = profiles.get(item.friendUserId)
+      return profile
+        ? {
+            userId: profile.userId,
+            nickname: profile.nickname,
+            requestedAt: item.requestedAt,
+          }
+        : null
+    })
+    .filter(Boolean)
+
+  return { friends, incomingRequests }
+}
+
+async function searchMembers(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  if (isGuest) {
+    throw new Error('친구 기능은 로그인 회원만 사용할 수 있습니다.')
+  }
+
+  const query = String(event.arguments.query ?? '').trim()
+  if (query.length < 2 || query.length > 64) {
+    throw new Error('닉네임 또는 이메일을 2자 이상 입력해 주세요.')
+  }
+
+  const members = []
+  let exclusiveStartKey
+  let scannedPages = 0
+  do {
+    const result = await documentClient.send(
+      new ScanCommand({
+        TableName: USERS_TABLE,
+        FilterExpression:
+          'userId <> :userId AND (contains(#nickname, :query) OR #email = :query)',
+        ExpressionAttributeNames: {
+          '#nickname': 'nickname',
+          '#email': 'email',
+        },
+        ExpressionAttributeValues: {
+          ':userId': userId,
+          ':query': query,
+        },
+        ProjectionExpression: 'userId, nickname',
+        Limit: 50,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    )
+    members.push(...(result.Items ?? []))
+    exclusiveStartKey = result.LastEvaluatedKey
+    scannedPages += 1
+  } while (exclusiveStartKey && members.length < 10 && scannedPages < 5)
+
+  return members.slice(0, 10)
+}
+
+async function sendFriendRequest(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  const targetUserId = String(event.arguments.userId ?? '')
+  if (isGuest || !targetUserId || targetUserId === userId) {
+    throw new Error('친구 요청 대상을 확인해 주세요.')
+  }
+  await getProfile(targetUserId)
+  const timestamp = nowIso()
+
+  try {
+    await documentClient.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: FRIENDS_TABLE,
+              Item: {
+                ownerUserId: userId,
+                friendUserId: targetUserId,
+                status: 'outgoing',
+                requestedAt: timestamp,
+              },
+              ConditionExpression: 'attribute_not_exists(ownerUserId)',
+            },
+          },
+          {
+            Put: {
+              TableName: FRIENDS_TABLE,
+              Item: {
+                ownerUserId: targetUserId,
+                friendUserId: userId,
+                status: 'incoming',
+                requestedAt: timestamp,
+              },
+              ConditionExpression: 'attribute_not_exists(ownerUserId)',
+            },
+          },
+        ],
+      }),
+    )
+  } catch (error) {
+    if (error?.name === 'TransactionCanceledException') {
+      throw new Error('이미 친구이거나 처리 중인 친구 요청이 있습니다.')
+    }
+    throw error
+  }
+  return true
+}
+
+async function respondFriendRequest(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  const requesterId = String(event.arguments.userId ?? '')
+  const decision = String(event.arguments.decision ?? '')
+  if (isGuest || !requesterId || !['accept', 'reject'].includes(decision)) {
+    throw new Error('친구 요청 처리 정보가 올바르지 않습니다.')
+  }
+
+  const incoming = await documentClient.send(
+    new GetCommand({
+      TableName: FRIENDS_TABLE,
+      Key: { ownerUserId: userId, friendUserId: requesterId },
+      ConsistentRead: true,
+    }),
+  )
+  if (incoming.Item?.status !== 'incoming') {
+    throw new Error('처리할 친구 요청이 없습니다.')
+  }
+
+  if (decision === 'reject') {
+    await removeFriendPair(userId, requesterId)
+    return true
+  }
+
+  const timestamp = nowIso()
+  await documentClient.send(
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: FRIENDS_TABLE,
+            Item: {
+              ownerUserId: userId,
+              friendUserId: requesterId,
+              status: 'accepted',
+              acceptedAt: timestamp,
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: FRIENDS_TABLE,
+            Item: {
+              ownerUserId: requesterId,
+              friendUserId: userId,
+              status: 'accepted',
+              acceptedAt: timestamp,
+            },
+          },
+        },
+      ],
+    }),
+  )
+  return true
+}
+
+async function removeFriendPair(leftUserId, rightUserId) {
+  await documentClient.send(
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Delete: {
+            TableName: FRIENDS_TABLE,
+            Key: { ownerUserId: leftUserId, friendUserId: rightUserId },
+          },
+        },
+        {
+          Delete: {
+            TableName: FRIENDS_TABLE,
+            Key: { ownerUserId: rightUserId, friendUserId: leftUserId },
+          },
+        },
+      ],
+    }),
+  )
+}
+
+async function removeFriend(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  const friendUserId = String(event.arguments.userId ?? '')
+  if (isGuest || !friendUserId) {
+    throw new Error('삭제할 친구를 확인해 주세요.')
+  }
+  await removeFriendPair(userId, friendUserId)
+  return true
 }
 
 async function getRoom(roomCode) {
@@ -380,6 +711,13 @@ async function deleteMyProfile(event) {
     exclusiveStartKey = history.LastEvaluatedKey
   } while (exclusiveStartKey)
 
+  const friendRelations = await listFriendRelations(userId)
+  await Promise.all(
+    friendRelations.map((relation) =>
+      removeFriendPair(userId, relation.friendUserId),
+    ),
+  )
+
   await documentClient.send(
     new DeleteCommand({
       TableName: USERS_TABLE,
@@ -412,6 +750,7 @@ async function createRoom(event) {
           isHost: true,
           isReady: true,
           slot: 1,
+          isPlaying: true,
           scores: [],
         },
       ],
@@ -458,6 +797,7 @@ async function readParticipantRoom(event) {
 
 async function listChatMessages(event) {
   const { room } = await readParticipantRoom(event)
+  const channel = normalizeChatChannel(event.arguments.channel)
   const limit = normalizeQueryLimit(
     event.arguments.limit,
     DEFAULT_CHAT_LIMIT,
@@ -465,9 +805,11 @@ async function listChatMessages(event) {
   const result = await documentClient.send(
     new QueryCommand({
       TableName: CHAT_MESSAGES_TABLE,
-      KeyConditionExpression: 'roomCode = :roomCode',
+      KeyConditionExpression:
+        'roomCode = :roomCode AND begins_with(messageKey, :channelPrefix)',
       ExpressionAttributeValues: {
         ':roomCode': room.roomCode,
+        ':channelPrefix': `${channel}#`,
       },
       ScanIndexForward: false,
       Limit: limit,
@@ -486,13 +828,21 @@ async function sendChatMessage(event) {
   }
 
   const text = normalizeChatText(event.arguments.text)
+  const channel = normalizeChatChannel(event.arguments.channel)
+  if (channel === 'lobby' && room.status === 'playing') {
+    throw new Error('게임이 시작된 뒤에는 대기실 채팅을 보낼 수 없습니다.')
+  }
+  if (channel === 'game' && room.status !== 'playing') {
+    throw new Error('게임 채팅은 게임이 시작된 뒤 사용할 수 있습니다.')
+  }
   const timestamp = nowIso()
   const message = {
     id: randomUUID(),
     roomCode: room.roomCode,
-    messageKey: `${timestamp}#${randomUUID()}`,
+    messageKey: `${channel}#${timestamp}#${randomUUID()}`,
     senderId: userId,
     senderNickname: sender.nickname,
+    channel,
     text,
     sentAt: timestamp,
     expiresAt: nowEpochSeconds() + CHAT_TTL_SECONDS,
@@ -526,14 +876,17 @@ async function joinRoom(event) {
     return room
   }
 
-  if (room.status !== 'waiting' || room.players.length >= 2) {
+  if (
+    !['waiting', 'ready'].includes(room.status) ||
+    room.players.length >= MAX_ROOM_PARTICIPANTS
+  ) {
     throw new Error('이미 시작했거나 정원이 찬 게임방입니다.')
   }
 
   const epoch = nowEpochSeconds()
   const nextRoom = {
     ...room,
-    status: 'ready',
+    status: room.status,
     players: [
       ...room.players,
       {
@@ -542,7 +895,8 @@ async function joinRoom(event) {
         isGuest,
         isHost: false,
         isReady: false,
-        slot: 2,
+        slot: null,
+        isPlaying: false,
         scores: [],
       },
     ],
@@ -562,13 +916,14 @@ async function leaveRoom(event) {
   const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
 
-  if (room.status === 'playing') {
+  const leavingPlayer = requireParticipant(room, userId)
+
+  if (room.status === 'playing' && leavingPlayer.isPlaying !== false) {
     throw new Error('진행 중인 게임에서는 기권 기능을 사용해 주세요.')
   }
 
-  const leavingPlayer = requireParticipant(room, userId)
   const epoch = nowEpochSeconds()
-  const nextRoom = leavingPlayer.isHost
+  const nextRoom = leavingPlayer.isHost && room.status !== 'playing'
     ? {
         ...room,
         status: 'cancelled',
@@ -578,7 +933,7 @@ async function leaveRoom(event) {
       }
     : {
         ...room,
-        status: 'waiting',
+        status: room.status === 'playing' ? 'playing' : 'waiting',
         players: room.players.filter((player) => player.userId !== userId),
         version: room.version + 1,
         updatedAt: nowIso(),
@@ -598,11 +953,16 @@ async function setReady(event) {
 
   const players = room.players.map((player) =>
     player.userId === userId
-      ? { ...player, isReady: Boolean(event.arguments.ready) }
+      ? {
+          ...player,
+          isReady:
+            player.isPlaying === false ? false : Boolean(event.arguments.ready),
+        }
       : player,
   )
+  const gamePlayers = getGamePlayers({ ...room, players })
   const isReady =
-    players.length === 2 && players.every((player) => player.isReady)
+    gamePlayers.length === 2 && gamePlayers.every((player) => player.isReady)
   const nextRoom = {
     ...room,
     players,
@@ -614,6 +974,110 @@ async function setReady(event) {
   return putVersionedRoom(nextRoom, room.version)
 }
 
+async function selectPlayers(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  const host = requireParticipant(room, userId)
+
+  if (!host.isHost) {
+    throw new Error('방장만 게임 플레이어를 선택할 수 있습니다.')
+  }
+  if (!['waiting', 'ready'].includes(room.status)) {
+    throw new Error('대기실에서만 게임 플레이어를 선택할 수 있습니다.')
+  }
+
+  const playerIds = [...new Set(event.arguments.playerIds ?? [])]
+  if (playerIds.length > 2) {
+    throw new Error('게임 플레이어는 최대 2명까지 선택할 수 있습니다.')
+  }
+  if (
+    playerIds.some(
+      (playerId) =>
+        !room.players.some((participant) => participant.userId === playerId),
+    )
+  ) {
+    throw new Error('방에 없는 참가자는 선택할 수 없습니다.')
+  }
+
+  const players = room.players.map((participant) => {
+    const slotIndex = playerIds.indexOf(participant.userId)
+    const isPlaying = slotIndex >= 0
+    return {
+      ...participant,
+      isPlaying,
+      slot: isPlaying ? slotIndex + 1 : null,
+      isReady: isPlaying
+        ? participant.isHost || Boolean(participant.isReady)
+        : false,
+      scores: [],
+    }
+  })
+  const gamePlayers = getGamePlayers({ ...room, players })
+  const allReady =
+    gamePlayers.length === 2 && gamePlayers.every((player) => player.isReady)
+
+  return putVersionedRoom(
+    {
+      ...room,
+      players,
+      status: allReady ? 'ready' : 'waiting',
+      version: room.version + 1,
+      updatedAt: nowIso(),
+    },
+    room.version,
+  )
+}
+
+async function inviteFriendToRoom(event) {
+  const { userId, isGuest } = requireIdentity(event)
+  if (isGuest) {
+    throw new Error('친구 초대는 로그인 회원만 사용할 수 있습니다.')
+  }
+
+  const room = await getRoom(event.arguments.roomCode)
+  const host = requireParticipant(room, userId)
+  if (!host.isHost) {
+    throw new Error('방장만 친구를 초대할 수 있습니다.')
+  }
+  if (!['waiting', 'ready'].includes(room.status)) {
+    throw new Error('대기 중인 방에만 친구를 초대할 수 있습니다.')
+  }
+  if (room.players.length >= MAX_ROOM_PARTICIPANTS) {
+    throw new Error('방 정원이 가득 찼습니다.')
+  }
+
+  const friendUserId = String(event.arguments.friendUserId ?? '')
+  const relation = await documentClient.send(
+    new GetCommand({
+      TableName: FRIENDS_TABLE,
+      Key: { ownerUserId: friendUserId, friendUserId: userId },
+      ConsistentRead: true,
+    }),
+  )
+  if (relation.Item?.status !== 'accepted') {
+    throw new Error('친구로 등록된 회원만 초대할 수 있습니다.')
+  }
+
+  await documentClient.send(
+    new UpdateCommand({
+      TableName: FRIENDS_TABLE,
+      Key: { ownerUserId: friendUserId, friendUserId: userId },
+      UpdateExpression:
+        'SET invitedRoomCode = :roomCode, invitedAt = :invitedAt',
+      ConditionExpression: '#status = :accepted',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':roomCode': room.roomCode,
+        ':invitedAt': nowIso(),
+        ':accepted': 'accepted',
+      },
+    }),
+  )
+  return true
+}
+
 async function startGame(event) {
   const { room, userId } = await readParticipantRoom(event)
   requireExpectedVersion(room, event.arguments.expectedVersion)
@@ -623,9 +1087,10 @@ async function startGame(event) {
     throw new Error('방장만 게임을 시작할 수 있습니다.')
   }
 
+  const gamePlayers = getGamePlayers(room)
   if (
-    room.players.length !== 2 ||
-    !room.players.every((candidate) => candidate.isReady)
+    gamePlayers.length !== 2 ||
+    !gamePlayers.every((candidate) => candidate.isReady)
   ) {
     throw new Error('두 플레이어가 모두 준비해야 게임을 시작할 수 있습니다.')
   }
@@ -634,11 +1099,11 @@ async function startGame(event) {
   const nextRoom = {
     ...room,
     status: 'playing',
-    activePlayerId: room.players[0].userId,
+    activePlayerId: gamePlayers[0].userId,
     dice: createInitialDice(),
     rollCount: 0,
     lastSeenAt: Object.fromEntries(
-      room.players.map((candidate) => [candidate.userId, epoch]),
+      gamePlayers.map((candidate) => [candidate.userId, epoch]),
     ),
     version: room.version + 1,
     updatedAt: nowIso(),
@@ -679,10 +1144,14 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
   const timestamp = nowIso()
   const epoch = nowEpochSeconds()
   const matchId = randomUUID()
-  const player1Score = calculatePlayerTotal(room.players[0].scores)
-  const player2Score = calculatePlayerTotal(room.players[1].scores)
+  const gamePlayers = getGamePlayers(room)
+  if (gamePlayers.length !== 2) {
+    throw new Error('경기 플레이어 정보를 찾을 수 없습니다.')
+  }
+  const player1Score = calculatePlayerTotal(gamePlayers[0].scores)
+  const player2Score = calculatePlayerTotal(gamePlayers[1].scores)
   const playerScores = [player1Score, player2Score]
-  const matchPlayers = room.players.map((player, index) => ({
+  const matchPlayers = gamePlayers.map((player, index) => ({
     userId: player.userId,
     nickname: player.nickname,
     slot: player.slot,
@@ -705,14 +1174,14 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
     winnerId,
     loserId,
     reason,
-    player1Id: room.players[0].userId,
-    player2Id: room.players[1].userId,
+    player1Id: gamePlayers[0].userId,
+    player2Id: gamePlayers[1].userId,
     player1Score,
     player2Score,
     players: matchPlayers,
     finishedAt: timestamp,
   }
-  const playerMatchItems = room.players.map((player, index) => {
+  const playerMatchItems = gamePlayers.map((player, index) => {
     const opponentIndex = index === 0 ? 1 : 0
 
     return {
@@ -724,11 +1193,11 @@ async function finishMatch(room, expectedVersion, reason, winnerId, loserId) {
       reason,
       myScore: playerScores[index],
       opponentScore: playerScores[opponentIndex],
-      opponentNickname: room.players[opponentIndex].nickname,
+      opponentNickname: gamePlayers[opponentIndex].nickname,
       finishedAt: timestamp,
     }
   })
-  const isRankedMatch = room.players.every(
+  const isRankedMatch = gamePlayers.every(
     (player) =>
       player.isGuest !== true &&
       !String(player.userId).startsWith('guest:'),
@@ -915,10 +1384,14 @@ async function confirmScore(event) {
     throw new Error('알 수 없는 점수 항목입니다.')
   }
 
-  const activeIndex = room.players.findIndex(
+  const gamePlayers = getGamePlayers(room)
+  const activeIndex = gamePlayers.findIndex(
     (player) => player.userId === userId,
   )
-  const activePlayer = room.players[activeIndex]
+  const activePlayer = gamePlayers[activeIndex]
+  if (!activePlayer) {
+    throw new Error('관전자는 점수를 확정할 수 없습니다.')
+  }
   if (activePlayer.scores.some((entry) => entry.category === category)) {
     throw new Error('이미 확정한 점수 항목입니다.')
   }
@@ -927,7 +1400,7 @@ async function confirmScore(event) {
     category,
     room.dice.map((die) => die.value),
   )
-  const players = room.players.map((player, index) =>
+  const updatedGamePlayers = gamePlayers.map((player, index) =>
     index === activeIndex
       ? {
           ...player,
@@ -935,25 +1408,31 @@ async function confirmScore(event) {
         }
       : player,
   )
+  const updatedById = new Map(
+    updatedGamePlayers.map((player) => [player.userId, player]),
+  )
+  const players = room.players.map(
+    (player) => updatedById.get(player.userId) ?? player,
+  )
   const scoredRoom = {
     ...room,
     players,
   }
-  const isFinished = players.every(
+  const isFinished = updatedGamePlayers.every(
     (player) => player.scores.length === SCORE_CATEGORIES.length,
   )
 
   if (isFinished) {
-    const player1Total = calculatePlayerTotal(players[0].scores)
-    const player2Total = calculatePlayerTotal(players[1].scores)
+    const player1Total = calculatePlayerTotal(updatedGamePlayers[0].scores)
+    const player2Total = calculatePlayerTotal(updatedGamePlayers[1].scores)
     const winnerId =
       player1Total === player2Total
         ? undefined
         : player1Total > player2Total
-          ? players[0].userId
-          : players[1].userId
+          ? updatedGamePlayers[0].userId
+          : updatedGamePlayers[1].userId
     const loserId = winnerId
-      ? players.find((player) => player.userId !== winnerId)?.userId
+      ? updatedGamePlayers.find((player) => player.userId !== winnerId)?.userId
       : undefined
 
     return finishMatch(
@@ -965,7 +1444,8 @@ async function confirmScore(event) {
     )
   }
 
-  const nextPlayer = players[(activeIndex + 1) % players.length]
+  const nextPlayer =
+    updatedGamePlayers[(activeIndex + 1) % updatedGamePlayers.length]
   const nextRoom = {
     ...scoredRoom,
     activePlayerId: nextPlayer.userId,
@@ -986,7 +1466,10 @@ async function forfeit(event) {
     throw new Error('진행 중인 게임에서만 기권할 수 있습니다.')
   }
 
-  const winner = room.players.find((player) => player.userId !== userId)
+  requireGamePlayer(room, userId)
+  const winner = getGamePlayers(room).find(
+    (player) => player.userId !== userId,
+  )
   if (!winner) {
     throw new Error('상대 플레이어를 찾을 수 없습니다.')
   }
@@ -1027,7 +1510,10 @@ async function claimDisconnectWin(event) {
     throw new Error('진행 중인 게임이 아닙니다.')
   }
 
-  const opponent = room.players.find((player) => player.userId !== userId)
+  requireGamePlayer(room, userId)
+  const opponent = getGamePlayers(room).find(
+    (player) => player.userId !== userId,
+  )
   if (!opponent) {
     throw new Error('상대 플레이어를 찾을 수 없습니다.')
   }
@@ -1103,11 +1589,12 @@ async function processPresenceCheck() {
 
     for (const room of result.Items ?? []) {
       checked += 1
-      if (room.players.length !== 2) {
+      const gamePlayers = getGamePlayers(room)
+      if (gamePlayers.length !== 2) {
         continue
       }
 
-      const disconnectedPlayers = room.players.filter((player) => {
+      const disconnectedPlayers = gamePlayers.filter((player) => {
         const lastSeen = room.lastSeenAt?.[player.userId] ?? 0
         return epoch - lastSeen >= DISCONNECT_GRACE_SECONDS
       })
@@ -1124,7 +1611,7 @@ async function processPresenceCheck() {
         }
 
         const loser = disconnectedPlayers[0]
-        const winner = room.players.find(
+        const winner = gamePlayers.find(
           (player) => player.userId !== loser.userId,
         )
         if (!winner) {
@@ -1176,6 +1663,8 @@ const handlers = {
     return room
   },
   listChatMessages,
+  friendDashboard,
+  searchMembers,
   myMatchHistory,
   matchDetail,
   onRoomChanged: authorizeRoomSubscription,
@@ -1187,6 +1676,7 @@ const handlers = {
   joinRoom,
   leaveRoom,
   setReady,
+  selectPlayers,
   startGame,
   rollDice,
   confirmScore,
@@ -1194,6 +1684,11 @@ const handlers = {
   heartbeat,
   claimDisconnectWin,
   sendChatMessage,
+  touchPresence,
+  sendFriendRequest,
+  respondFriendRequest,
+  removeFriend,
+  inviteFriendToRoom,
 }
 
 export async function handler(event) {

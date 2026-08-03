@@ -11,10 +11,12 @@ import {
 } from './appSyncApi'
 import type { RealtimeChatMessage } from './realtimeGateway'
 import type { OnlineUser } from './types'
+import type { OnlineChatChannel } from './types'
 import { performAndroidFeedback } from '../../platform/nativeApp'
 
 interface OnlineChatPanelProps {
   roomCode: string
+  channel: OnlineChatChannel
   user: OnlineUser
   isOpen: boolean
   onClose: () => void
@@ -30,6 +32,7 @@ function formatMessageTime(value: string): string {
 
 function OnlineChatPanel({
   roomCode,
+  channel,
   user,
   isOpen,
   onClose,
@@ -40,7 +43,8 @@ function OnlineChatPanel({
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [connectionMessage, setConnectionMessage] = useState('')
-  const endRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
+  const messageListRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const lastSeenMessageIdRef = useRef<string | null>(null)
   const lastFeedbackMessageIdRef = useRef<string | null>(null)
@@ -61,7 +65,7 @@ function OnlineChatPanel({
     let pollingId: number | null = null
 
     const refreshMessages = () => {
-      void listOnlineChatMessages(roomCode)
+      void listOnlineChatMessages(roomCode, channel)
         .then((items) => {
           if (active) {
             setMessages(items)
@@ -88,6 +92,7 @@ function OnlineChatPanel({
 
     const unsubscribe = subscribeToOnlineChat(
       roomCode,
+      channel,
       user.kind,
       (nextMessage) => {
         if (active) {
@@ -113,11 +118,50 @@ function OnlineChatPanel({
         window.clearInterval(pollingId)
       }
     }
-  }, [roomCode, user.kind])
+  }, [channel, roomCode, user.kind])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const messageList = messageListRef.current
+    if (!messageList) {
+      return
+    }
+    messageList.scrollTo({
+      top: messageList.scrollHeight,
+      behavior: isLoading ? 'auto' : 'smooth',
+    })
+  }, [isLoading, messages])
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const viewport = window.visualViewport
+    const section = panelRef.current?.closest<HTMLElement>(
+      '.online-chat-section',
+    )
+    if (!viewport || !section) {
+      return
+    }
+
+    const updateViewport = () => {
+      section.style.setProperty(
+        '--chat-visual-height',
+        `${viewport.height}px`,
+      )
+      section.style.setProperty('--chat-visual-top', `${viewport.offsetTop}px`)
+    }
+    updateViewport()
+    viewport.addEventListener('resize', updateViewport)
+    viewport.addEventListener('scroll', updateViewport)
+
+    return () => {
+      viewport.removeEventListener('resize', updateViewport)
+      viewport.removeEventListener('scroll', updateViewport)
+      section.style.removeProperty('--chat-visual-height')
+      section.style.removeProperty('--chat-visual-top')
+    }
+  }, [isOpen])
 
   useEffect(() => {
     const latestMessage = messages.at(-1)
@@ -178,10 +222,10 @@ function OnlineChatPanel({
     setIsSending(true)
     setMessage('')
     setConnectionMessage('')
-    inputRef.current?.focus()
+    inputRef.current?.focus({ preventScroll: true })
 
     try {
-      appendMessage(await sendOnlineChatMessage(roomCode, text))
+      appendMessage(await sendOnlineChatMessage(roomCode, channel, text))
     } catch (error) {
       setMessage((currentMessage) => currentMessage || text)
       setConnectionMessage(
@@ -191,14 +235,17 @@ function OnlineChatPanel({
       )
     } finally {
       setIsSending(false)
-      window.requestAnimationFrame(() => inputRef.current?.focus())
+      window.requestAnimationFrame(() =>
+        inputRef.current?.focus({ preventScroll: true }),
+      )
     }
   }
 
   return (
     <aside
+      ref={panelRef}
       className="online-chat-panel"
-      aria-label="게임 채팅"
+      aria-label={channel === 'lobby' ? '대기실 채팅' : '게임 채팅'}
     >
       <button
         className="mobile-chat-close"
@@ -208,7 +255,11 @@ function OnlineChatPanel({
       >
         ×
       </button>
-      <div className="chat-message-list" aria-live="polite">
+      <div
+        ref={messageListRef}
+        className="chat-message-list"
+        aria-live="polite"
+      >
         {isLoading ? (
           <p className="chat-state-message">채팅을 불러오는 중…</p>
         ) : messages.length === 0 ? (
@@ -243,7 +294,6 @@ function OnlineChatPanel({
             </article>
           ))
         )}
-        <div ref={endRef} />
       </div>
 
       <form className="chat-compose" onSubmit={submitMessage}>

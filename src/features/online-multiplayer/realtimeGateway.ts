@@ -3,6 +3,7 @@ export interface RealtimeChatMessage {
   roomCode: string
   senderId: string
   senderNickname: string
+  channel: 'lobby' | 'game'
   text: string
   sentAt: string
 }

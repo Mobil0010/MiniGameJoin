@@ -5,12 +5,15 @@ import {
   type SignedAppSyncRequest,
 } from './guestAwsAuth'
 import type {
+  FriendDashboard,
+  MemberSearchResult,
   MatchDetail,
   MatchHistoryPage,
   MemberGameStats,
   OnlineMatchEndReason,
   OnlineRoom,
   OnlineRoomPlayer,
+  OnlineChatChannel,
   OnlineUser,
 } from './types'
 import type { RealtimeChatMessage } from './realtimeGateway'
@@ -53,7 +56,8 @@ interface RoomDto {
     nickname: string
     isHost: boolean
     isReady: boolean
-    slot: 1 | 2
+    isPlaying?: boolean | null
+    slot?: 1 | 2 | null
     scores: Array<{
       category: ScoreCategory
       score: number
@@ -79,6 +83,7 @@ interface ChatMessageDto {
   roomCode: string
   senderId: string
   senderNickname: string
+  channel: OnlineChatChannel
   text: string
   sentAt: string
 }
@@ -132,6 +137,7 @@ const CHAT_MESSAGE_FIELDS = `
   roomCode
   senderId
   senderNickname
+  channel
   text
   sentAt
 `
@@ -145,6 +151,7 @@ const ROOM_FIELDS = `
     nickname
     isHost
     isReady
+    isPlaying
     slot
     scores {
       category
@@ -270,6 +277,7 @@ function createAppSyncRealtimeUrl(idToken: string): string {
 
 export function subscribeToOnlineChat(
   roomCode: string,
+  channel: OnlineChatChannel,
   userKind: OnlineUser['kind'],
   onMessage: (message: RealtimeChatMessage) => void,
   onError: (message: string) => void,
@@ -322,12 +330,12 @@ export function subscribeToOnlineChat(
               type: 'start',
               payload: {
                 data: JSON.stringify({
-                  query: `subscription OnChatMessage($roomCode: ID!) {
-                    onChatMessage(roomCode: $roomCode) {
+                  query: `subscription OnChatMessage($roomCode: ID!, $channel: ChatChannel!) {
+                    onChatMessage(roomCode: $roomCode, channel: $channel) {
                       ${CHAT_MESSAGE_FIELDS}
                     }
                   }`,
-                  variables: { roomCode },
+                  variables: { roomCode, channel },
                 }),
                 extensions: {
                   authorization: {
@@ -446,7 +454,9 @@ function mapRoom(room: RoomDto): OnlineRoom {
     nickname: player.nickname,
     isHost: player.isHost,
     isReady: player.isReady,
-    slot: player.slot,
+    isPlaying:
+      player.isPlaying ?? (player.slot === 1 || player.slot === 2),
+    slot: player.slot ?? undefined,
     scores: mapScoreEntries(player.scores),
   }))
   const dice: Die[] = room.dice.map((die) => ({
@@ -461,7 +471,7 @@ function mapRoom(room: RoomDto): OnlineRoom {
     gameId: room.gameId,
     status: room.status,
     players,
-    maxPlayers: 2,
+    maxPlayers: 4,
     activePlayerId: room.activePlayerId,
     dice,
     rollCount: room.rollCount,
@@ -607,6 +617,34 @@ export async function setOnlineReady(
   )
 
   return mapRoom(data.setReady)
+}
+
+export async function selectOnlinePlayers(
+  room: OnlineRoom,
+  playerIds: string[],
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ selectPlayers: RoomDto }>(
+    `mutation SelectPlayers(
+      $roomCode: ID!
+      $playerIds: [ID!]!
+      $expectedVersion: Int!
+    ) {
+      selectPlayers(
+        roomCode: $roomCode
+        playerIds: $playerIds
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    {
+      roomCode: room.code,
+      playerIds,
+      expectedVersion: room.version,
+    },
+  )
+
+  return mapRoom(data.selectPlayers)
 }
 
 export async function startOnlineGame(
@@ -767,16 +805,17 @@ export async function claimOnlineDisconnectWin(
 
 export async function listOnlineChatMessages(
   roomCode: string,
+  channel: OnlineChatChannel,
 ): Promise<RealtimeChatMessage[]> {
   const data = await graphqlRequest<{
     listChatMessages: ChatMessageDto[]
   }>(
-    `query ListChatMessages($roomCode: ID!, $limit: Int) {
-      listChatMessages(roomCode: $roomCode, limit: $limit) {
+    `query ListChatMessages($roomCode: ID!, $channel: ChatChannel!, $limit: Int) {
+      listChatMessages(roomCode: $roomCode, channel: $channel, limit: $limit) {
         ${CHAT_MESSAGE_FIELDS}
       }
     }`,
-    { roomCode, limit: 50 },
+    { roomCode, channel, limit: 50 },
   )
 
   return data.listChatMessages
@@ -784,20 +823,108 @@ export async function listOnlineChatMessages(
 
 export async function sendOnlineChatMessage(
   roomCode: string,
+  channel: OnlineChatChannel,
   text: string,
 ): Promise<RealtimeChatMessage> {
   const data = await graphqlRequest<{
     sendChatMessage: ChatMessageDto
   }>(
-    `mutation SendChatMessage($roomCode: ID!, $text: String!) {
-      sendChatMessage(roomCode: $roomCode, text: $text) {
+    `mutation SendChatMessage($roomCode: ID!, $channel: ChatChannel!, $text: String!) {
+      sendChatMessage(roomCode: $roomCode, channel: $channel, text: $text) {
         ${CHAT_MESSAGE_FIELDS}
       }
     }`,
-    { roomCode, text },
+    { roomCode, channel, text },
   )
 
   return data.sendChatMessage
+}
+
+export async function touchOnlinePresence(): Promise<void> {
+  await graphqlRequest<{ touchPresence: boolean }>(
+    `mutation TouchPresence {
+      touchPresence
+    }`,
+  )
+}
+
+export async function getFriendDashboard(): Promise<FriendDashboard> {
+  const data = await graphqlRequest<{ friendDashboard: FriendDashboard }>(
+    `query FriendDashboard {
+      friendDashboard {
+        friends {
+          userId
+          nickname
+          isOnline
+          lastSeenAt
+          invitedRoomCode
+        }
+        incomingRequests {
+          userId
+          nickname
+          requestedAt
+        }
+      }
+    }`,
+  )
+  return data.friendDashboard
+}
+
+export async function searchOnlineMembers(
+  query: string,
+): Promise<MemberSearchResult[]> {
+  const data = await graphqlRequest<{ searchMembers: MemberSearchResult[] }>(
+    `query SearchMembers($query: String!) {
+      searchMembers(query: $query) {
+        userId
+        nickname
+      }
+    }`,
+    { query },
+  )
+  return data.searchMembers
+}
+
+export async function requestOnlineFriend(userId: string): Promise<void> {
+  await graphqlRequest<{ sendFriendRequest: boolean }>(
+    `mutation SendFriendRequest($userId: ID!) {
+      sendFriendRequest(userId: $userId)
+    }`,
+    { userId },
+  )
+}
+
+export async function respondOnlineFriendRequest(
+  userId: string,
+  decision: 'accept' | 'reject',
+): Promise<void> {
+  await graphqlRequest<{ respondFriendRequest: boolean }>(
+    `mutation RespondFriendRequest($userId: ID!, $decision: FriendRequestDecision!) {
+      respondFriendRequest(userId: $userId, decision: $decision)
+    }`,
+    { userId, decision },
+  )
+}
+
+export async function removeOnlineFriend(userId: string): Promise<void> {
+  await graphqlRequest<{ removeFriend: boolean }>(
+    `mutation RemoveFriend($userId: ID!) {
+      removeFriend(userId: $userId)
+    }`,
+    { userId },
+  )
+}
+
+export async function inviteOnlineFriend(
+  roomCode: string,
+  friendUserId: string,
+): Promise<void> {
+  await graphqlRequest<{ inviteFriendToRoom: boolean }>(
+    `mutation InviteFriendToRoom($roomCode: ID!, $friendUserId: ID!) {
+      inviteFriendToRoom(roomCode: $roomCode, friendUserId: $friendUserId)
+    }`,
+    { roomCode, friendUserId },
+  )
 }
 
 export async function getMyMatchHistory(

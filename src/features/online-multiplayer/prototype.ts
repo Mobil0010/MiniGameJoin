@@ -114,8 +114,10 @@ export function createPrototypeRoom(user: OnlineUser): OnlineRoom {
         nickname: user.nickname,
         isHost: true,
         isReady: true,
+        isPlaying: true,
+        slot: 1,
       },
     ],
-    maxPlayers: 2,
+    maxPlayers: 4,
   }
 }

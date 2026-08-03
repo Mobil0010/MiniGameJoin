@@ -33,11 +33,14 @@ import {
   isGuestOnlineConfigured,
   joinOnlineRoom,
   leaveOnlineRoom,
+  selectOnlinePlayers,
   setOnlineReady,
   startOnlineGame,
   updateOnlineNickname,
 } from '../features/online-multiplayer/appSyncApi'
 import OnlineYachtGame from '../features/online-multiplayer/OnlineYachtGame'
+import OnlineChatPanel from '../features/online-multiplayer/OnlineChatPanel'
+import FriendsPanel from '../features/online-multiplayer/FriendsPanel'
 import {
   clearGuestAwsSession,
   createOnlineGuestUser,
@@ -85,6 +88,14 @@ function YachtOnlinePage() {
   const guestOnlineConfigured = isGuestOnlineConfigured()
   const isOnlineMatchVisible =
     room?.status === 'playing' || room?.status === 'finished'
+  const currentRoomParticipant = room?.players.find(
+    (player) => player.userId === user?.id,
+  )
+  const isCurrentUserRoomHost = currentRoomParticipant?.isHost === true
+  const selectedRoomPlayers =
+    room?.players
+      .filter((player) => player.isPlaying)
+      .sort((left, right) => (left.slot ?? 99) - (right.slot ?? 99)) ?? []
 
   useEffect(() => {
     let isActive = true
@@ -432,6 +443,23 @@ function YachtOnlinePage() {
     }
   }
 
+  const joinRoomByInvitation = async (roomCode: string) => {
+    if (!user || room) {
+      return
+    }
+    setIsLobbySubmitting(true)
+    setNotice('')
+    try {
+      setRoom(await joinOnlineRoom(roomCode))
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : '초대받은 방에 참가하지 못했습니다.',
+      )
+    } finally {
+      setIsLobbySubmitting(false)
+    }
+  }
+
   const leaveOnline = () => {
     if (user?.kind === 'member') {
       signOutMember()
@@ -605,6 +633,33 @@ function YachtOnlinePage() {
         error instanceof Error
           ? error.message
           : '준비 상태를 변경하지 못했습니다.',
+      )
+    } finally {
+      setIsLobbySubmitting(false)
+    }
+  }
+
+  const toggleSelectedPlayer = async (userId: string) => {
+    if (!room || !isCurrentUserRoomHost) {
+      return
+    }
+
+    const currentIds = selectedRoomPlayers.map((player) => player.userId)
+    const nextIds = currentIds.includes(userId)
+      ? currentIds.filter((id) => id !== userId)
+      : [...currentIds, userId]
+    if (nextIds.length > 2) {
+      setNotice('게임 플레이어는 2명까지만 선택할 수 있습니다.')
+      return
+    }
+
+    setIsLobbySubmitting(true)
+    setNotice('')
+    try {
+      setRoom(await selectOnlinePlayers(room, nextIds))
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : '플레이어를 선택하지 못했습니다.',
       )
     } finally {
       setIsLobbySubmitting(false)
@@ -991,27 +1046,87 @@ function YachtOnlinePage() {
           </div>
 
           <div className="room-members">
-            <h2>참가자</h2>
-            <div className="room-member room-member-ready">
-              <span>1P · 방장</span>
-              <strong>{room.players[0]?.nickname ?? '방장 정보 없음'}</strong>
-              <small>
-                {room.players[0]?.isReady ? '준비 완료' : '준비 중'}
-              </small>
+            <div className="room-members-heading">
+              <h2>참가자</h2>
+              <span>{room.players.length} / 4</span>
             </div>
-            <div className="room-member room-member-empty">
-              <span>2P</span>
-              <strong>
-                {room.players[1]?.nickname ?? '친구를 기다리는 중'}
-              </strong>
-              <small>
-                {room.players[1]
-                  ? room.players[1].isReady
-                    ? '준비 완료'
-                    : '준비 중'
-                  : '초대 코드로 참가'}
-              </small>
+            <p className="room-role-guide">
+              방장이 2명을 게임 플레이어로 선택하며, 나머지는 관전합니다.
+            </p>
+            <div className="room-member-grid">
+              {Array.from({ length: 4 }, (_, index) => {
+                const participant = room.players[index]
+                if (!participant) {
+                  return (
+                    <div className="room-member room-member-empty" key={index}>
+                      <span>{index + 1}번 자리</span>
+                      <strong>참가자를 기다리는 중</strong>
+                      <small>초대 코드로 참가</small>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div
+                    className={`room-member ${
+                      participant.isPlaying
+                        ? 'room-member-playing'
+                        : 'room-member-spectating'
+                    }`}
+                    key={participant.userId}
+                  >
+                    <span>
+                      {participant.isHost ? '방장 · ' : ''}
+                      {participant.isPlaying
+                        ? `${participant.slot ?? '-'}P`
+                        : '관전자'}
+                    </span>
+                    <strong>{participant.nickname}</strong>
+                    <small>
+                      {participant.isPlaying
+                        ? participant.isReady
+                          ? '준비 완료'
+                          : '준비 중'
+                        : '관전 대기'}
+                    </small>
+                    {isCurrentUserRoomHost && (
+                      <button
+                        type="button"
+                        disabled={isLobbySubmitting}
+                        onClick={() =>
+                          void toggleSelectedPlayer(participant.userId)
+                        }
+                      >
+                        {participant.isPlaying
+                          ? '관전자로 변경'
+                          : '플레이어로 선택'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
+          </div>
+
+          {user.kind === 'member' && (
+            <FriendsPanel
+              user={user}
+              roomCode={room.code}
+              canInvite={isCurrentUserRoomHost}
+            />
+          )}
+
+          <div className="lobby-chat-section">
+            <h2>대기실 채팅</h2>
+            <p>게임이 시작되면 이 대화는 게임 채팅으로 넘어가지 않습니다.</p>
+            <OnlineChatPanel
+              roomCode={room.code}
+              channel="lobby"
+              user={user}
+              isOpen
+              onClose={() => undefined}
+              onUnreadChange={() => undefined}
+            />
           </div>
 
           <div className="room-actions">
@@ -1030,14 +1145,14 @@ function YachtOnlinePage() {
                 disabled={
                   isLobbySubmitting ||
                   room.status === 'playing' ||
-                  room.players.length !== 2 ||
-                  !room.players.every((player) => player.isReady)
+                  selectedRoomPlayers.length !== 2 ||
+                  !selectedRoomPlayers.every((player) => player.isReady)
                 }
                 onClick={startGame}
               >
                 {room.status === 'playing' ? '게임 진행 중' : '게임 시작'}
               </button>
-            ) : (
+            ) : currentRoomParticipant?.isPlaying ? (
               <button
                 type="button"
                 disabled={isLobbySubmitting || room.status === 'playing'}
@@ -1048,6 +1163,10 @@ function YachtOnlinePage() {
                   ? '준비 취소'
                   : '준비 완료'}
               </button>
+            ) : (
+              <span className="spectator-ready-note">
+                관전자는 준비할 필요가 없습니다.
+              </span>
             )}
           </div>
 
@@ -1120,6 +1239,15 @@ function YachtOnlinePage() {
             <p className="guest-stats-notice">
               게스트 경기 결과는 계정 전적에 저장되지 않습니다.
             </p>
+          )}
+
+          {user.kind === 'member' && (
+            <FriendsPanel
+              user={user}
+              onJoinInvitedRoom={(roomCode) =>
+                void joinRoomByInvitation(roomCode)
+              }
+            />
           )}
 
           <div className="lobby-actions-grid">

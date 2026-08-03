@@ -61,6 +61,7 @@ ap-northeast-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/joinRoom",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/leaveRoom",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/setReady",
+        "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/selectPlayers",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/startGame",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/rollDice",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/confirmScore",

@@ -33,6 +33,16 @@ enum MatchResult {
   draw
 }
 
+enum ChatChannel {
+  lobby
+  game
+}
+
+enum FriendRequestDecision {
+  accept
+  reject
+}
+
 type UserProfile {
   userId: ID!
   email: AWSEmail!
@@ -54,7 +64,8 @@ type RoomPlayer @aws_cognito_user_pools @aws_iam {
   nickname: String!
   isHost: Boolean!
   isReady: Boolean!
-  slot: Int!
+  slot: Int
+  isPlaying: Boolean
   scores: [ScoreEntry!]!
 }
 
@@ -85,8 +96,33 @@ type ChatMessage @aws_cognito_user_pools @aws_iam {
   roomCode: ID!
   senderId: ID!
   senderNickname: String!
+  channel: ChatChannel!
   text: String!
   sentAt: AWSDateTime!
+}
+
+type FriendSummary {
+  userId: ID!
+  nickname: String!
+  isOnline: Boolean!
+  lastSeenAt: AWSDateTime
+  invitedRoomCode: ID
+}
+
+type FriendRequest {
+  userId: ID!
+  nickname: String!
+  requestedAt: AWSDateTime!
+}
+
+type FriendDashboard {
+  friends: [FriendSummary!]!
+  incomingRequests: [FriendRequest!]!
+}
+
+type UserSearchResult {
+  userId: ID!
+  nickname: String!
 }
 
 type MatchHistoryItem {
@@ -126,9 +162,11 @@ type MatchDetail {
 type Query {
   me: UserProfile!
   room(roomCode: ID!): Room! @aws_cognito_user_pools @aws_iam
-  listChatMessages(roomCode: ID!, limit: Int): [ChatMessage!]!
+  listChatMessages(roomCode: ID!, channel: ChatChannel!, limit: Int): [ChatMessage!]!
     @aws_cognito_user_pools
     @aws_iam
+  friendDashboard: FriendDashboard!
+  searchMembers(query: String!): [UserSearchResult!]!
   myMatchHistory(limit: Int, nextToken: String): MatchHistoryPage!
   matchDetail(matchId: ID!): MatchDetail!
 }
@@ -153,6 +191,11 @@ type Mutation {
   startGame(roomCode: ID!, expectedVersion: Int!): Room!
     @aws_cognito_user_pools
     @aws_iam
+  selectPlayers(
+    roomCode: ID!
+    playerIds: [ID!]!
+    expectedVersion: Int!
+  ): Room! @aws_cognito_user_pools @aws_iam
 
   rollDice(
     roomCode: ID!
@@ -172,9 +215,15 @@ type Mutation {
   claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
     @aws_cognito_user_pools
     @aws_iam
-  sendChatMessage(roomCode: ID!, text: String!): ChatMessage!
+  sendChatMessage(roomCode: ID!, channel: ChatChannel!, text: String!): ChatMessage!
     @aws_cognito_user_pools
     @aws_iam
+
+  touchPresence: Boolean!
+  sendFriendRequest(userId: ID!): Boolean!
+  respondFriendRequest(userId: ID!, decision: FriendRequestDecision!): Boolean!
+  removeFriend(userId: ID!): Boolean!
+  inviteFriendToRoom(roomCode: ID!, friendUserId: ID!): Boolean!
 }
 
 type Subscription {
@@ -186,6 +235,7 @@ type Subscription {
         "joinRoom"
         "leaveRoom"
         "setReady"
+        "selectPlayers"
         "startGame"
         "rollDice"
         "confirmScore"
@@ -193,7 +243,7 @@ type Subscription {
         "claimDisconnectWin"
       ]
     )
-  onChatMessage(roomCode: ID!): ChatMessage
+  onChatMessage(roomCode: ID!, channel: ChatChannel!): ChatMessage
     @aws_cognito_user_pools
     @aws_iam
     @aws_subscribe(mutations: ["sendChatMessage"])

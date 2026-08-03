@@ -31,6 +31,8 @@ import {
   rollOnlineDice,
   sendOnlineForfeitOnPageExit,
   sendOnlineHeartbeat,
+  leaveOnlineRoom,
+  touchOnlinePresence,
 } from './appSyncApi'
 import OnlineChatPanel from './OnlineChatPanel'
 import OnlineMatchExitDialog from './OnlineMatchExitDialog'
@@ -105,7 +107,7 @@ function OnlineYachtGame({
 
   const players = useMemo<YachtPlayer[]>(
     () =>
-      room.players.map((player, index) => ({
+      room.players.filter((player) => player.isPlaying).map((player, index) => ({
         id: player.userId,
         nickname: player.nickname,
         slot: player.slot ?? ((index + 1) as 1 | 2),
@@ -113,6 +115,10 @@ function OnlineYachtGame({
       })),
     [room.players],
   )
+  const currentParticipant = room.players.find(
+    (player) => player.userId === user.id,
+  )
+  const isSpectator = currentParticipant?.isPlaying === false
   const activePlayer =
     players.find((player) => player.id === room.activePlayerId) ?? players[0]
   const isMyTurn =
@@ -168,9 +174,9 @@ function OnlineYachtGame({
       : 0
 
   useEffect(() => {
-    setAndroidGameSessionActive(room.status === 'playing')
+    setAndroidGameSessionActive(room.status === 'playing' && !isSpectator)
     return () => setAndroidGameSessionActive(false)
-  }, [room.status])
+  }, [isSpectator, room.status])
 
   useEffect(() => {
     if (!previousIsMyTurnRef.current && isMyTurn) {
@@ -196,7 +202,7 @@ function OnlineYachtGame({
   }, [heldStateKey, room.dice])
 
   useEffect(() => {
-    if (room.status !== 'playing' || isAndroidNativeApp()) {
+    if (room.status !== 'playing' || isSpectator || isAndroidNativeApp()) {
       return
     }
 
@@ -207,10 +213,10 @@ function OnlineYachtGame({
 
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
-  }, [room.status])
+  }, [isSpectator, room.status])
 
   useEffect(() => {
-    if (room.status !== 'playing' || isAndroidNativeApp()) {
+    if (room.status !== 'playing' || isSpectator || isAndroidNativeApp()) {
       pageExitRequestRef.current = null
       return
     }
@@ -232,10 +238,10 @@ function OnlineYachtGame({
     return () => {
       active = false
     }
-  }, [room, user.id])
+  }, [isSpectator, room, user.id])
 
   useEffect(() => {
-    if (room.status !== 'playing' || isAndroidNativeApp()) {
+    if (room.status !== 'playing' || isSpectator || isAndroidNativeApp()) {
       return
     }
 
@@ -246,10 +252,10 @@ function OnlineYachtGame({
     window.addEventListener('pagehide', forfeitAfterConfirmedPageExit)
     return () =>
       window.removeEventListener('pagehide', forfeitAfterConfirmedPageExit)
-  }, [room])
+  }, [isSpectator, room])
 
   useEffect(() => {
-    if (room.status !== 'playing') {
+    if (room.status !== 'playing' || isSpectator) {
       return
     }
 
@@ -266,7 +272,7 @@ function OnlineYachtGame({
 
     window.addEventListener('popstate', interceptBackNavigation)
     return () => window.removeEventListener('popstate', interceptBackNavigation)
-  }, [room.code, room.status])
+  }, [isSpectator, room.code, room.status])
 
   useEffect(() => {
     if (room.status !== 'playing') {
@@ -274,12 +280,18 @@ function OnlineYachtGame({
     }
 
     void sendOnlineHeartbeat(room.code).catch(() => undefined)
+    if (user.kind === 'member') {
+      void touchOnlinePresence().catch(() => undefined)
+    }
     const intervalId = window.setInterval(() => {
       void sendOnlineHeartbeat(room.code).catch(() => undefined)
+      if (user.kind === 'member') {
+        void touchOnlinePresence().catch(() => undefined)
+      }
     }, HEARTBEAT_INTERVAL_MS)
 
     return () => window.clearInterval(intervalId)
-  }, [room.code, room.status])
+  }, [room.code, room.status, user.kind])
 
   useEffect(() => {
     return () => {
@@ -445,6 +457,23 @@ function OnlineYachtGame({
     }
   }
 
+  const leaveSpectator = async () => {
+    setIsSubmitting(true)
+    setErrorMessage('')
+    try {
+      await leaveOnlineRoom(room)
+      onReturnToLobby()
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : '관전 중인 게임에서 나가지 못했습니다.',
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const guideMessage =
     room.status === 'finished'
       ? '게임이 종료되었습니다.'
@@ -483,6 +512,9 @@ function OnlineYachtGame({
         />
 
         <div className="panel play-panel" aria-busy={isSubmitting}>
+          {isSpectator && room.status === 'playing' && (
+            <p className="spectator-banner">관전 중 · 게임 조작은 할 수 없습니다.</p>
+          )}
           {showYachtCelebration && (
             <YachtCelebration
               nickname={activePlayer?.nickname ?? '플레이어'}
@@ -583,9 +615,15 @@ function OnlineYachtGame({
                   className="danger-action"
                   type="button"
                   disabled={isSubmitting}
-                  onClick={() => setShowExitDialog(true)}
+                  onClick={() => {
+                    if (isSpectator) {
+                      void leaveSpectator()
+                    } else {
+                      setShowExitDialog(true)
+                    }
+                  }}
                 >
-                  게임 나가기
+                  {isSpectator ? '관전 나가기' : '게임 나가기'}
                 </button>
               </div>
               {errorMessage && (
@@ -631,6 +669,7 @@ function OnlineYachtGame({
       >
         <OnlineChatPanel
           roomCode={room.code}
+          channel="game"
           user={user}
           isOpen={isChatVisible}
           onClose={() => setIsMobileChatOpen(false)}
