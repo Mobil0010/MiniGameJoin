@@ -89,6 +89,7 @@ startGame
 rollDice
 confirmScore
 forfeit
+returnToWaitingRoom
 heartbeat
 claimDisconnectWin
 sendChatMessage
@@ -129,6 +130,10 @@ Schedule: rate(1 minute)
 Target: MiniGameJoinApiHandler
 Payload: {"source":"minigamejoin.presence-check"}
 ```
+
+진행 중인 방도 참가자가 4명 미만이면 `joinRoom`으로 입장할 수 있습니다.
+게임 시작 후 들어온 참가자는 기존 플레이어와 턴에 영향을 주지 않는 관전자로
+추가됩니다.
 
 ## 8. React 환경 변수
 

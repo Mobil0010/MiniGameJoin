@@ -23,7 +23,14 @@ const FIXED_TIMESTEP = 1 / 60
 const BASE_CAMERA_FOV = 31
 const BASE_CAMERA_ASPECT = 45 / 14
 
-const SLOT_X = [-3.65, -1.82, 0, 1.82, 3.65]
+const DESKTOP_SLOT_X = [-3.65, -1.82, 0, 1.82, 3.65]
+const MOBILE_SLOT_COORDINATES: Array<[number, number]> = [
+  [-1.7, -0.78],
+  [0, -0.78],
+  [1.7, -0.78],
+  [-0.86, 0.82],
+  [0.86, 0.82],
+]
 
 type ThreeModule = typeof import('three')
 type RapierModule = typeof import('@dimforge/rapier3d-compat')
@@ -229,8 +236,15 @@ function createKeepLabel(three: ThreeModule) {
   return sprite
 }
 
-function slotPosition(three: ThreeModule, index: number) {
-  return new three.Vector3(SLOT_X[index] ?? 0, FLOOR_TOP + DIE_HALF + 0.04, 0)
+function slotPosition(
+  three: ThreeModule,
+  index: number,
+  isCompactLayout: boolean,
+) {
+  const [x, z] = isCompactLayout
+    ? (MOBILE_SLOT_COORDINATES[index] ?? [0, 0])
+    : [DESKTOP_SLOT_X[index] ?? 0, 0]
+  return new three.Vector3(x, FLOOR_TOP + DIE_HALF + 0.04, z)
 }
 
 function targetQuaternion(
@@ -298,6 +312,8 @@ export async function createDice3DScene({
   if (signal?.aborted) {
     throw new DOMException('3D 주사위 초기화가 취소되었습니다.', 'AbortError')
   }
+
+  let isCompactLayout = window.matchMedia('(max-width: 760px)').matches
 
   const renderer: WebGLRenderer = new three.WebGLRenderer({
     canvas,
@@ -417,7 +433,7 @@ export async function createDice3DScene({
   })
 
   const records: DiceRecord[] = dice.map((die, index) => {
-    const position = slotPosition(three, index)
+    const position = slotPosition(three, index, isCompactLayout)
     const rotation = targetQuaternion(three, die.value, die.id)
     const body = world.createRigidBody(
       rapier.RigidBodyDesc.fixed()
@@ -458,7 +474,11 @@ export async function createDice3DScene({
     mesh.add(holdOutline)
 
     const keepLabel = createKeepLabel(three)
-    keepLabel.position.set(position.x, 0.16, position.z + 1.08)
+    keepLabel.position.set(
+      position.x,
+      0.16,
+      position.z + (isCompactLayout ? 0.78 : 1.08),
+    )
     keepLabel.visible = die.isHeld
     scene.add(keepLabel)
 
@@ -501,7 +521,7 @@ export async function createDice3DScene({
       record.keepLabel.position.set(
         record.mesh.position.x,
         0.16,
-        record.mesh.position.z + 1.08,
+        record.mesh.position.z + (isCompactLayout ? 0.78 : 1.08),
       )
     }
   }
@@ -598,7 +618,7 @@ export async function createDice3DScene({
       record.mesh.material = die.value === null ? materials.question : materials.numbered
 
       if (phase === 'idle') {
-        const position = slotPosition(three, index)
+        const position = slotPosition(three, index, isCompactLayout)
         record.mesh.position.copy(position)
         record.body.setBodyType(rapier.RigidBodyType.Fixed, false)
         record.body.setTranslation(position, false)
@@ -620,7 +640,7 @@ export async function createDice3DScene({
     onBusyChange(true)
 
     for (const [index, record] of records.entries()) {
-      const position = slotPosition(three, index)
+      const position = slotPosition(three, index, isCompactLayout)
       if (record.isHeld) {
         record.body.setBodyType(rapier.RigidBodyType.Fixed, true)
         record.body.setTranslation(position, true)
@@ -676,7 +696,9 @@ export async function createDice3DScene({
     for (const [index, record] of records.entries()) {
       record.settleStartPosition.copy(record.mesh.position)
       record.settleStartRotation.copy(record.mesh.quaternion)
-      record.settleTargetPosition.copy(slotPosition(three, index))
+      record.settleTargetPosition.copy(
+        slotPosition(three, index, isCompactLayout),
+      )
       record.settleTargetRotation.copy(targetQuaternion(three, record.value, record.id))
       record.body.setBodyType(rapier.RigidBodyType.Fixed, false)
     }
@@ -689,18 +711,31 @@ export async function createDice3DScene({
       return
     }
     const isCompact = window.matchMedia('(max-width: 760px)').matches
+    if (isCompactLayout !== isCompact) {
+      isCompactLayout = isCompact
+      if (phase === 'idle') {
+        for (const [index, record] of records.entries()) {
+          const position = slotPosition(three, index, isCompactLayout)
+          record.mesh.position.copy(position)
+          record.body.setTranslation(position, false)
+        }
+        updateIndicators()
+      }
+    }
     const nextAspect = bounds.width / bounds.height
-    const baseHalfFov = three.MathUtils.degToRad(BASE_CAMERA_FOV / 2)
+    const layoutCameraFov = isCompact ? 44 : BASE_CAMERA_FOV
+    const layoutCameraAspect = isCompact ? 4 / 3 : BASE_CAMERA_ASPECT
+    const baseHalfFov = three.MathUtils.degToRad(layoutCameraFov / 2)
     const fittedVerticalFov = three.MathUtils.radToDeg(
       2 *
         Math.atan(
-          (Math.tan(baseHalfFov) * BASE_CAMERA_ASPECT) / nextAspect,
+          (Math.tan(baseHalfFov) * layoutCameraAspect) / nextAspect,
         ),
     )
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isCompact ? 1.45 : 1.85))
     renderer.setSize(bounds.width, bounds.height, false)
     camera.aspect = nextAspect
-    camera.fov = Math.max(BASE_CAMERA_FOV, fittedVerticalFov)
+    camera.fov = Math.max(layoutCameraFov, fittedVerticalFov)
     camera.updateProjectionMatrix()
     render()
   }

@@ -877,10 +877,10 @@ async function joinRoom(event) {
   }
 
   if (
-    !['waiting', 'ready'].includes(room.status) ||
+    !['waiting', 'ready', 'playing'].includes(room.status) ||
     room.players.length >= MAX_ROOM_PARTICIPANTS
   ) {
-    throw new Error('이미 시작했거나 정원이 찬 게임방입니다.')
+    throw new Error('입장할 수 없거나 정원이 찬 게임방입니다.')
   }
 
   const epoch = nowEpochSeconds()
@@ -1107,6 +1107,47 @@ async function startGame(event) {
     ),
     version: room.version + 1,
     updatedAt: nowIso(),
+    expiresAt: epoch + ROOM_TTL_SECONDS,
+  }
+
+  return putVersionedRoom(nextRoom, room.version)
+}
+
+async function returnToWaitingRoom(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireParticipant(room, userId)
+
+  if (['waiting', 'ready'].includes(room.status)) {
+    return room
+  }
+
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  if (room.status !== 'finished') {
+    throw new Error('종료된 게임에서만 대기실로 돌아갈 수 있습니다.')
+  }
+
+  const timestamp = nowIso()
+  const epoch = nowEpochSeconds()
+  const players = room.players.map((player) => ({
+    ...player,
+    isReady: player.isPlaying === true && player.isHost === true,
+    scores: [],
+  }))
+  const nextRoom = {
+    ...room,
+    status: 'waiting',
+    players,
+    activePlayerId: null,
+    dice: createInitialDice(),
+    rollCount: 0,
+    winnerId: undefined,
+    finishReason: undefined,
+    resultRecorded: false,
+    lastSeenAt: Object.fromEntries(
+      players.map((player) => [player.userId, epoch]),
+    ),
+    version: room.version + 1,
+    updatedAt: timestamp,
     expiresAt: epoch + ROOM_TTL_SECONDS,
   }
 
@@ -1681,6 +1722,7 @@ const handlers = {
   rollDice,
   confirmScore,
   forfeit,
+  returnToWaitingRoom,
   heartbeat,
   claimDisconnectWin,
   sendChatMessage,

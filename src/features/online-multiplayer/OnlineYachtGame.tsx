@@ -28,6 +28,7 @@ import {
   confirmOnlineScore,
   forfeitOnlineGame,
   prepareOnlineForfeitOnPageExit,
+  returnOnlineRoomToWaiting,
   rollOnlineDice,
   sendOnlineForfeitOnPageExit,
   sendOnlineHeartbeat,
@@ -444,14 +445,30 @@ function OnlineYachtGame({
     setErrorMessage('')
 
     try {
-      await forfeitOnlineGame(room)
+      onRoomChange(await forfeitOnlineGame(room))
       setShowExitDialog(false)
-      onReturnToLobby()
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : '기권 처리에 실패했습니다.',
       )
       setShowExitDialog(false)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const returnToWaitingRoom = async () => {
+    setIsSubmitting(true)
+    setErrorMessage('')
+
+    try {
+      onRoomChange(await returnOnlineRoomToWaiting(room))
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : '대기실로 돌아가지 못했습니다.',
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -550,9 +567,18 @@ function OnlineYachtGame({
                     } 승리!`
                   : '동점입니다!'}
               </p>
-              <button type="button" onClick={onReturnToLobby}>
-                온라인 로비로 돌아가기
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => void returnToWaitingRoom()}
+              >
+                {isSubmitting ? '대기실로 이동 중…' : '같은 방 대기실로 돌아가기'}
               </button>
+              {errorMessage && (
+                <p className="lobby-notice" role="alert">
+                  {errorMessage}
+                </p>
+              )}
             </div>
           ) : (
             <>

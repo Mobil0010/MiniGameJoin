@@ -739,6 +739,30 @@ export async function forfeitOnlineGame(
   return mapRoom(data.forfeit)
 }
 
+export async function returnOnlineRoomToWaiting(
+  room: OnlineRoom,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ returnToWaitingRoom: RoomDto }>(
+    `mutation ReturnToWaitingRoom(
+      $roomCode: ID!
+      $expectedVersion: Int!
+    ) {
+      returnToWaitingRoom(
+        roomCode: $roomCode
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    {
+      roomCode: room.code,
+      expectedVersion: room.version,
+    },
+  )
+
+  return mapRoom(data.returnToWaitingRoom)
+}
+
 export async function prepareOnlineForfeitOnPageExit(
   room: OnlineRoom,
 ): Promise<SignedAppSyncRequest | null> {

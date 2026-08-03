@@ -210,6 +210,9 @@ type Mutation {
   forfeit(roomCode: ID!, expectedVersion: Int!): Room!
     @aws_cognito_user_pools
     @aws_iam
+  returnToWaitingRoom(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
 
   heartbeat(roomCode: ID!): Boolean! @aws_cognito_user_pools @aws_iam
   claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
@@ -240,6 +243,7 @@ type Subscription {
         "rollDice"
         "confirmScore"
         "forfeit"
+        "returnToWaitingRoom"
         "claimDisconnectWin"
       ]
     )

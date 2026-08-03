@@ -182,7 +182,6 @@ function YachtOnlinePage() {
       !appSyncConfigured ||
       !user ||
       !room ||
-      room.status === 'finished' ||
       room.status === 'cancelled'
     ) {
       return
@@ -1271,7 +1270,10 @@ function YachtOnlinePage() {
             <article className="lobby-action-card">
               <span aria-hidden="true">#</span>
               <h2>초대 코드로 참가</h2>
-              <p>친구에게 받은 6자리 코드를 입력해 방을 찾습니다.</p>
+              <p>
+                친구에게 받은 6자리 코드를 입력합니다. 진행 중인 게임에는
+                관전자로 참가합니다.
+              </p>
               <form className="join-room-form" onSubmit={joinRoom}>
                 <input
                   type="text"
