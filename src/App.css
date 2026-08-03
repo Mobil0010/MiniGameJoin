@@ -620,6 +620,16 @@
   gap: 9px;
 }
 
+@media (min-width: 821px) {
+  .room-waiting-rps > .room-members {
+    grid-column: 1 / -1;
+  }
+
+  .room-waiting-rps .room-member-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .room-member {
   padding: 15px;
   display: grid;

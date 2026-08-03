@@ -1254,7 +1254,11 @@ function YachtOnlinePage() {
           />
         )
       ) : room ? (
-        <section className="room-waiting">
+        <section
+          className={`room-waiting ${
+            room.gameId === 'rock-paper-scissors' ? 'room-waiting-rps' : ''
+          }`}
+        >
           <div className="room-code-block">
             <span>ROOM CODE</span>
             <strong>{room.code}</strong>
