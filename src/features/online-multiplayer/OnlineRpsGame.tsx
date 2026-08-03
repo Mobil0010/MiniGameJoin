@@ -391,17 +391,6 @@ function OnlineRpsGame({
         </div>
       ) : (
         <>
-          <div className="rps-player-strip">
-            {room.players.map((player) => {
-              const state = room.rpsPlayerStates?.find(({ userId }) => userId === player.userId)
-              const isActive = currentPlayerIds.includes(player.userId)
-              const submitted = room.rpsSubmittedPlayerIds?.includes(player.userId)
-              return <article className={`rps-player-chip ${isActive ? 'rps-player-chip-active' : ''} ${state?.eliminated ? 'rps-player-chip-out' : ''}`} key={player.userId}>
-                <span>{player.isHost ? '방장' : isActive ? '대결 중' : state?.eliminated ? '탈락' : '대기'}</span><strong>{player.nickname}</strong>
-                <small>{settings?.mode === 'tournament' ? isActive ? `${state?.wins ?? 0} / ${settings.winsRequired}승${submitted ? ' · 선택 완료' : ''}` : '대진 대기' : `생명 ${'♥'.repeat(state?.lives ?? 0)}${submitted ? ' · 선택 완료' : ''}`}</small>
-              </article>
-            })}
-          </div>
           {room.rpsPhase === 'revealing' ? (
             <div className="rps-reveal-board">
               <p className="eyebrow">REVEAL</p><h2>{isDraw ? '무승부! 다시 승부합니다' : '이번 라운드 결과'}</h2>
@@ -417,6 +406,17 @@ function OnlineRpsGame({
               <div className="rps-hand-grid">{HANDS.map(({ hand, emoji, label }) => <button className={selectedHand === hand ? 'rps-hand-selected' : ''} type="button" disabled={isSubmitting} key={hand} onClick={() => void chooseHand(hand)}><span aria-hidden="true">{emoji}</span><strong>{label}</strong></button>)}</div>
             </div>
           ) : <div className="rps-result-card"><span aria-hidden="true">👀</span><h2>현재 대결을 관전 중입니다</h2><p>{currentPlayerIds.map((id) => playerById.get(id)?.nickname).join(' vs ')}</p></div>}
+          <div className="rps-player-strip">
+            {room.players.map((player) => {
+              const state = room.rpsPlayerStates?.find(({ userId }) => userId === player.userId)
+              const isActive = currentPlayerIds.includes(player.userId)
+              const submitted = room.rpsSubmittedPlayerIds?.includes(player.userId)
+              return <article className={`rps-player-chip ${isActive ? 'rps-player-chip-active' : ''} ${state?.eliminated ? 'rps-player-chip-out' : ''}`} key={player.userId}>
+                <span>{player.isHost ? '방장' : isActive ? '대결 중' : state?.eliminated ? '탈락' : '대기'}</span><strong>{player.nickname}</strong>
+                <small>{settings?.mode === 'tournament' ? isActive ? `${state?.wins ?? 0} / ${settings.winsRequired}승${submitted ? ' · 선택 완료' : ''}` : '대진 대기' : `생명 ${'♥'.repeat(state?.lives ?? 0)}${submitted ? ' · 선택 완료' : ''}`}</small>
+              </article>
+            })}
+          </div>
         </>
       )}
 
