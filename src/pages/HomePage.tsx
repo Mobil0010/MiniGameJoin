@@ -15,9 +15,21 @@ function HomePage() {
       </header>
 
       <section className="mode-hero">
+        <div className="hero-status" aria-hidden="true">
+          <span>● ONLINE</span>
+          <span>2 GAME MODES</span>
+        </div>
         <p className="eyebrow">MINI GAME ARCADE</p>
-        <h1>어떻게 플레이할까요?</h1>
-        <p>한 화면에서 함께 플레이하거나 온라인에서 친구와 만나보세요.</p>
+        <h1>
+          오늘은 누구와<br />
+          <em>한 판 할까?</em>
+        </h1>
+        <p>한 화면에서 바로 붙거나, 온라인에서 친구를 초대해 플레이해.</p>
+        <div className="hero-decorations" aria-hidden="true">
+          <span>✦</span>
+          <span>⚡</span>
+          <span>✦</span>
+        </div>
       </section>
 
       <section className="mode-grid" aria-label="플레이 방식 선택">
@@ -25,6 +37,7 @@ function HomePage() {
           <span className="mode-icon" aria-hidden="true">
             🎲
           </span>
+          <span className="mode-number" aria-hidden="true">01</span>
           <div>
             <span className="badge">한 화면에서 바로 시작</span>
             <h2>로컬 플레이</h2>
@@ -40,6 +53,7 @@ function HomePage() {
           <span className="mode-icon" aria-hidden="true">
             🌐
           </span>
+          <span className="mode-number" aria-hidden="true">02</span>
           <div>
             <span className="badge">온라인 플레이 가능</span>
             <h2>웹 멀티플레이</h2>

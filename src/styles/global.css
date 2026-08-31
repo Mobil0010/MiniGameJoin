@@ -1,12 +1,30 @@
 body {
   min-width: 320px;
   min-height: 100vh;
-  background: var(--color-bg);
+  position: relative;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 10% 4%, rgb(255 79 145 / 18%), transparent 25rem),
+    radial-gradient(circle at 90% 12%, rgb(22 203 209 / 18%), transparent 27rem),
+    linear-gradient(180deg, #f8f6ff 0%, var(--color-bg) 46%, #f8f6ff 100%);
   color: var(--color-text);
   font-family:
     Pretendard, 'Noto Sans KR', 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(108 76 255 / 5%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(108 76 255 / 5%) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+  content: '';
 }
 
 a {
@@ -16,12 +34,18 @@ a {
 
 button {
   border: 0;
+  font-family: inherit;
 }
 
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid rgba(91, 81, 232, 0.35);
+  outline: 3px solid rgb(255 79 145 / 50%);
   outline-offset: 3px;
+}
+
+::selection {
+  background: var(--color-yellow);
+  color: var(--color-ink);
 }
 
 #root {

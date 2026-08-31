@@ -13,8 +13,12 @@ function LocalGamesPage() {
       </header>
 
       <section className="home-hero">
+        <div className="hero-status" aria-hidden="true">
+          <span>● READY</span>
+          <span>PASS & PLAY</span>
+        </div>
         <p className="eyebrow">LOCAL PLAY</p>
-        <h1>로컬 플레이 게임</h1>
+        <h1>같은 화면에서<br /><em>승부 시작!</em></h1>
         <p>한 화면에서 두 명이 번갈아 플레이할 게임을 선택하세요.</p>
       </section>
 
