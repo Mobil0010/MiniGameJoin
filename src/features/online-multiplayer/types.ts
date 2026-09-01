@@ -89,6 +89,18 @@ export interface OnlineRoom {
   rpsRevealEndsAt?: string | null
 }
 
+export interface PublicOnlineRoom {
+  roomCode: string
+  roomName: string
+  gameId: OnlineGameId
+  status: 'waiting' | 'ready'
+  playerCount: number
+  maxPlayers: number
+  hostNickname: string
+  rpsSettings?: RpsSettings
+  createdAt: string
+}
+
 export type OnlineChatChannel = 'lobby' | 'game'
 
 export interface FriendSummary {

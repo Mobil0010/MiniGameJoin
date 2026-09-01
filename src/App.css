@@ -526,6 +526,133 @@
   width: 100%;
 }
 
+.create-room-options {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.create-room-options > label:first-child {
+  display: grid;
+  gap: 7px;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.create-room-options input[type='text'] {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #f8f9fd;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.public-room-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.public-room-toggle input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--color-primary);
+}
+
+.public-room-browser {
+  padding: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.public-room-browser-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.public-room-browser-heading h2 {
+  margin: 4px 0;
+}
+
+.public-room-browser-heading p:not(.eyebrow),
+.public-room-empty p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.public-room-browser-heading > button,
+.public-room-list article > button {
+  padding: 10px 14px;
+  border: 1px solid #c8c4fa;
+  border-radius: 11px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.public-room-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.public-room-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #f9faff;
+}
+
+.public-room-info > span,
+.public-room-info > small {
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.public-room-info h3 {
+  margin: 4px 0;
+  font-size: 17px;
+}
+
+.public-room-info p {
+  margin: 0 0 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.public-room-empty {
+  margin-top: 20px;
+  padding: 28px 18px;
+  border: 1px dashed var(--color-border);
+  border-radius: 16px;
+  background: #f9faff;
+  text-align: center;
+}
+
+.public-room-empty p {
+  margin-top: 5px;
+}
+
 .join-room-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3326,6 +3453,21 @@
 
   .join-room-form {
     grid-template-columns: 1fr;
+  }
+
+  .public-room-browser {
+    padding: 20px;
+  }
+
+  .public-room-browser-heading,
+  .public-room-list article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .public-room-browser-heading > button,
+  .public-room-list article > button {
+    width: 100%;
   }
 
   .room-actions {

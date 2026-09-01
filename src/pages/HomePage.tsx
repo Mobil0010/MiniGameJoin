@@ -24,7 +24,7 @@ function HomePage() {
           오늘은 누구와<br />
           <em>한 판 할까?</em>
         </h1>
-        <p>한 화면에서 바로 붙거나, 온라인에서 친구를 초대해 플레이해.</p>
+        <p>한 화면에서 바로 붙거나, 온라인에서 친구를 초대해 플레이해보세요.</p>
         <div className="hero-decorations" aria-hidden="true">
           <span>✦</span>
           <span>⚡</span>

@@ -45,6 +45,7 @@ const DEFAULT_HISTORY_LIMIT = 20
 const MAX_QUERY_LIMIT = 50
 const ONLINE_WINDOW_SECONDS = 75
 const MAX_ROOM_PARTICIPANTS = 6
+const PUBLIC_ROOMS_INDEX = 'publicGameId-createdAt-index'
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -95,6 +96,17 @@ function normalizeNickname(value) {
   }
 
   return nickname
+}
+
+function normalizeRoomName(value, nickname) {
+  const roomName = String(value ?? '').trim()
+  if (!roomName) {
+    return `${nickname}의 게임방`
+  }
+  if (roomName.length > 24) {
+    throw new Error('방 이름은 24자 이하로 입력해 주세요.')
+  }
+  return roomName
 }
 
 function normalizeChatText(value) {
@@ -626,6 +638,55 @@ async function getRoom(roomCode) {
   }
 }
 
+async function listPublicRooms(event) {
+  requireIdentity(event)
+  const gameId = normalizeGameId(event.arguments.gameId)
+  const limit = normalizeQueryLimit(event.arguments.limit, 30)
+  const rooms = []
+  let exclusiveStartKey
+
+  do {
+    const result = await documentClient.send(new QueryCommand({
+      TableName: ROOMS_TABLE,
+      IndexName: PUBLIC_ROOMS_INDEX,
+      KeyConditionExpression: 'publicGameId = :gameId',
+      FilterExpression:
+        '#status IN (:waiting, :ready) AND isPublic = :true',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':gameId': gameId,
+        ':waiting': 'waiting',
+        ':ready': 'ready',
+        ':true': true,
+      },
+      ScanIndexForward: false,
+      Limit: Math.min(50, Math.max(limit, 20)),
+      ExclusiveStartKey: exclusiveStartKey,
+    }))
+
+    for (const room of result.Items ?? []) {
+      const maxPlayers = room.maxPlayers ?? MAX_ROOM_PARTICIPANTS
+      if ((room.players?.length ?? 0) >= maxPlayers) continue
+      rooms.push({
+        roomCode: room.roomCode,
+        roomName: room.roomName ?? '공개 게임방',
+        gameId: room.gameId,
+        status: room.status,
+        playerCount: room.players?.length ?? 0,
+        maxPlayers,
+        hostNickname:
+          room.players?.find((player) => player.isHost)?.nickname ?? '방장',
+        rpsSettings: room.rpsSettings,
+        createdAt: room.createdAt,
+      })
+      if (rooms.length >= limit) break
+    }
+    exclusiveStartKey = result.LastEvaluatedKey
+  } while (exclusiveStartKey && rooms.length < limit)
+
+  return rooms
+}
+
 async function getActiveMemberRoom(profile) {
   const roomCode = profile.activeRoomCode
   if (!roomCode) {
@@ -1138,6 +1199,8 @@ async function createRoom(event) {
   const rpsSettings = gameId === 'rock-paper-scissors'
     ? normalizeRpsSettings()
     : undefined
+  const isPublic = event.arguments.isPublic === true
+  const roomName = normalizeRoomName(event.arguments.roomName, nickname)
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const roomCode = createRoomCode()
@@ -1146,6 +1209,9 @@ async function createRoom(event) {
     const room = {
       roomCode,
       gameId,
+      isPublic,
+      roomName,
+      publicGameId: isPublic ? gameId : undefined,
       maxPlayers: gameId === 'rock-paper-scissors' ? rpsSettings.maxPlayers : 4,
       status: 'waiting',
       players: [
@@ -2559,6 +2625,7 @@ const handlers = {
     const { room } = await readParticipantRoom(event)
     return room
   },
+  listPublicRooms,
   listChatMessages,
   friendDashboard,
   searchMembers,

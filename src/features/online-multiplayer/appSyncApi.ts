@@ -13,6 +13,7 @@ import type {
   OnlineMatchEndReason,
   OnlineRoom,
   OnlineRoomPlayer,
+  PublicOnlineRoom,
   OnlineChatChannel,
   OnlineGameId,
   OnlineGameStats,
@@ -102,6 +103,18 @@ interface RoomDto {
   createdAt: string
   updatedAt: string
   expiresAt: number
+}
+
+interface PublicRoomDto {
+  roomCode: string
+  roomName: string
+  gameId: OnlineGameId
+  status: 'waiting' | 'ready'
+  playerCount: number
+  maxPlayers: number
+  hostNickname: string
+  rpsSettings?: RoomDto['rpsSettings']
+  createdAt: string
 }
 
 interface ChatMessageDto {
@@ -612,17 +625,69 @@ export async function deleteOnlineProfile(): Promise<void> {
 export async function createOnlineRoom(
   gameId: OnlineGameId,
   guestNickname?: string,
+  options?: { isPublic?: boolean; roomName?: string },
 ): Promise<OnlineRoom> {
   const data = await graphqlRequest<{ createRoom: RoomDto }>(
-    `mutation CreateRoom($gameId: String, $guestNickname: String) {
-      createRoom(gameId: $gameId, guestNickname: $guestNickname) {
+    `mutation CreateRoom(
+      $gameId: String
+      $guestNickname: String
+      $isPublic: Boolean
+      $roomName: String
+    ) {
+      createRoom(
+        gameId: $gameId
+        guestNickname: $guestNickname
+        isPublic: $isPublic
+        roomName: $roomName
+      ) {
         ${ROOM_FIELDS}
       }
     }`,
-    { gameId, guestNickname: guestNickname ?? null },
+    {
+      gameId,
+      guestNickname: guestNickname ?? null,
+      isPublic: options?.isPublic ?? false,
+      roomName: options?.roomName?.trim() || null,
+    },
   )
 
   return mapRoom(data.createRoom)
+}
+
+export async function listOnlinePublicRooms(
+  gameId: OnlineGameId,
+): Promise<PublicOnlineRoom[]> {
+  const data = await graphqlRequest<{ listPublicRooms: PublicRoomDto[] }>(
+    `query ListPublicRooms($gameId: String!, $limit: Int) {
+      listPublicRooms(gameId: $gameId, limit: $limit) {
+        roomCode
+        roomName
+        gameId
+        status
+        playerCount
+        maxPlayers
+        hostNickname
+        rpsSettings {
+          mode
+          timeLimitSeconds
+          winsRequired
+          maxPlayers
+        }
+        createdAt
+      }
+    }`,
+    { gameId, limit: 30 },
+  )
+
+  return data.listPublicRooms.map((room) => ({
+    ...room,
+    rpsSettings: room.rpsSettings
+      ? {
+          ...room.rpsSettings,
+          mode: room.rpsSettings.mode === 'allPlay' ? 'all-play' : 'tournament',
+        } as RpsSettings
+      : undefined,
+  }))
 }
 
 export async function joinOnlineRoom(

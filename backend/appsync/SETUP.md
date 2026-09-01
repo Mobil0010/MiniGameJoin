@@ -1,4 +1,4 @@
-# 기존 AWS 환경에 가위바위보 업데이트 적용하기
+# 기존 AWS 환경에 가위바위보·공개방 업데이트 적용하기
 
 이 문서는 이미 운영 중인 `MiniGameJoin` AWS 환경에 가위바위보와 게임별 전적을
 추가하는 절차입니다. 기존 리소스를 다시 만들지 않습니다.
@@ -26,6 +26,8 @@ Lambda data source: MiniGameJoinLambda
 2. Lambda 환경 변수 `GAME_STATS_TABLE` 1개와 실행 역할 권한 1개
 3. AppSync 신규 Resolver 4개
 4. 게스트 IAM 정책의 가위바위보 Mutation 권한 3개
+5. 기존 `MiniGameJoinRooms` 테이블에 공개방 조회용 GSI 1개
+6. AppSync `Query.listPublicRooms` Resolver 1개와 게스트 조회 권한
 
 다음 리소스는 이미 있다면 다시 만들거나 삭제하지 않습니다.
 
@@ -42,8 +44,9 @@ MiniGameJoinGuestRole
 MiniGameJoinPresenceCheck
 ```
 
-기존 DynamoDB 테이블의 키, TTL, GSI도 변경할 필요가 없습니다. 기존 요트 다이스
-방과 경기 기록을 삭제하거나 직접 수정할 필요도 없습니다.
+기존 DynamoDB 테이블의 기본 키와 TTL은 변경하지 않습니다. 공개방 기능을 위해
+`MiniGameJoinRooms`에 GSI 하나만 추가하며, 기존 방과 경기 기록을 삭제하거나
+직접 수정할 필요는 없습니다.
 
 ## 0. 변경 전 백업
 
@@ -100,6 +103,24 @@ Table settings: Default settings
   `yacht-dice` 기록으로 처리합니다.
 - 가위바위보 전적은 `gameId=rock-paper-scissors`로 별도 저장됩니다.
 
+### MiniGameJoinRooms 공개방 GSI 확인 또는 생성
+
+`MiniGameJoinRooms` → `Indexes`에서 아래 GSI가 있는지 확인합니다.
+
+```text
+Index name: publicGameId-createdAt-index
+Partition key: publicGameId (String)
+Sort key: createdAt (String)
+Projection: All
+```
+
+- 같은 이름과 키의 인덱스가 이미 있으면 생성하지 않습니다.
+- 없을 때만 `Create index`를 눌러 위 값으로 생성합니다.
+- 상태가 `Active`가 될 때까지 Lambda와 프런트엔드를 먼저 배포하지 않습니다.
+- 기존 방에는 `publicGameId`가 없으므로 인덱스에 나타나지 않으며 별도
+  마이그레이션이 필요하지 않습니다.
+- 새 코드로 만든 공개방만 `publicGameId`가 저장되어 목록에 표시됩니다.
+
 ## 2. Lambda 실행 역할 권한 갱신
 
 새 코드 업로드 전에 권한을 먼저 반영합니다.
@@ -116,6 +137,12 @@ Table settings: Default settings
 
 ```text
 arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinGameStats
+```
+
+공개방 조회를 위해 Query 접근 Resource에는 아래 GSI ARN도 필요합니다.
+
+```text
+arn:aws:dynamodb:ap-northeast-2:621641242785:table/MiniGameJoinRooms/index/publicGameId-createdAt-index
 ```
 
 기존 테이블 ARN이나 기존 권한은 제거하지 않습니다.
@@ -185,12 +212,13 @@ backend/dist/MiniGameJoinApiHandler.zip
 - `myMatchHistory`에 필수 `gameId` 인수 추가
 - 게임별 통계 Query와 가위바위보 Mutation 추가
 
-## 6. 신규 AppSync Resolver 4개 연결
+## 6. 신규 AppSync Resolver 연결
 
 아래 필드만 새 Resolver가 필요합니다.
 
 ```text
 Query.myGameStats
+Query.listPublicRooms
 Mutation.updateRpsSettings
 Mutation.submitRpsHand
 Mutation.advanceRpsRound
@@ -269,6 +297,12 @@ arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/type
 arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/advanceRpsRound
 ```
 
+공개방 목록을 게스트도 볼 수 있도록 아래 Query ARN도 추가합니다.
+
+```text
+arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Query/fields/listPublicRooms
+```
+
 `Query.myGameStats`와 전적 Query는 회원 전용이므로 게스트 역할에 추가하지
 않습니다. 기존 게스트 AppSync ARN은 제거하지 않습니다. 전체 정책 예시는
 `backend/appsync/GUEST_SETUP.md`에 있습니다.
@@ -312,6 +346,9 @@ npm.cmd run build
 - Lambda 환경 변수에 `GAME_STATS_TABLE=MiniGameJoinGameStats` 존재
 - Lambda 실행 역할이 `MiniGameJoinGameStats`를 읽고 쓸 수 있음
 - AppSync 신규 Resolver 4개가 `MiniGameJoinLambda`에 연결됨
+- `MiniGameJoinRooms`의 `publicGameId-createdAt-index` 상태가 `Active`
+- `Query.listPublicRooms`가 `MiniGameJoinLambda`에 연결됨
+- Lambda 실행 역할에 공개방 GSI Query 권한이 있음
 - 게스트 역할에 가위바위보 Mutation 3개가 추가됨
 
 ### 회원끼리 가위바위보 확인

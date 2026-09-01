@@ -131,6 +131,8 @@ MiniGameJoin은 하나의 웹사이트에서 여러 종류의 미니게임을 �
 - Cognito Identity Pool 기반 게스트 접속
 - 회원과 게스트 모두 방 생성 및 참가
 - 동일 계정의 중복 로그인은 허용하되 방 생성과 게임 참가는 한 방에서만 가능
+- Yacht Dice와 가위바위보 공개방 생성, 게임별 공개방 목록과 즉시 참가
+- 비공개방은 기존 6자리 초대 코드 방식으로 참가
 - 6자리 초대 코드
 - 방장, 참가자, 준비 상태 표시
 - 회원/게스트 방장의 게임 시작
@@ -623,6 +625,8 @@ type RoomStatus =
 | `rpsPhase` | 손 선택 또는 결과 공개 상태 |
 | `rpsCurrentPlayerIds` | 현재 대결에 참가하는 플레이어 |
 | `rpsPlayerStates` | 플레이어별 승수, 생명, 탈락 상태 |
+| `isPublic` / `roomName` | 공개방 여부와 목록에 표시할 방 이름 |
+| `publicGameId` | 게임별 공개방 GSI Partition Key |
 | `version` | 낙관적 동시성 제어 버전 |
 | `lastSeenAt` | 플레이어별 heartbeat 시각 |
 | `expiresAt` | DynamoDB TTL |
@@ -671,6 +675,7 @@ type RoomStatus =
 | `me` | 회원 | 내 프로필과 승패 조회 |
 | `myGameStats` | 회원 | 지정한 게임의 승·패·무승부·승률 조회 |
 | `room` | 회원/게스트 | 참가 중인 방 조회 |
+| `listPublicRooms` | 회원/게스트 | 선택한 게임의 참가 가능한 공개방 조회 |
 | `listChatMessages` | 회원/게스트 | 참가 방 채팅 조회 |
 | `friendDashboard` | 회원 | 친구, 받은 요청, 접속 상태와 초대 조회 |
 | `searchMembers` | 회원 | 닉네임으로 회원 검색 |

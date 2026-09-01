@@ -41,6 +41,7 @@ import {
   isGuestOnlineConfigured,
   joinOnlineRoom,
   leaveOnlineRoom,
+  listOnlinePublicRooms,
   selectOnlinePlayers,
   setOnlineReady,
   startOnlineGame,
@@ -65,6 +66,7 @@ import type {
   OnlineGameId,
   OnlineGameStats,
   OnlineUser,
+  PublicOnlineRoom,
 } from '../features/online-multiplayer/types'
 
 type AuthView =
@@ -80,6 +82,10 @@ function YachtOnlinePage() {
   const [user, setUser] = useState<OnlineUser | null>(null)
   const [room, setRoom] = useState<OnlineRoom | null>(null)
   const [joinCode, setJoinCode] = useState('')
+  const [publicRooms, setPublicRooms] = useState<PublicOnlineRoom[]>([])
+  const [isPublicRoomsLoading, setIsPublicRoomsLoading] = useState(false)
+  const [isPublicRoom, setIsPublicRoom] = useState(true)
+  const [roomName, setRoomName] = useState('')
   const [notice, setNotice] = useState('')
   const [authNotice, setAuthNotice] = useState('')
   const [authError, setAuthError] = useState('')
@@ -287,6 +293,39 @@ function YachtOnlinePage() {
     return () => window.clearInterval(intervalId)
   }, [appSyncConfigured, room, user])
 
+  const refreshPublicRooms = async () => {
+    if (!user || !selectedOnlineGameId || room || !appSyncConfigured) return
+    setIsPublicRoomsLoading(true)
+    try {
+      setPublicRooms(await listOnlinePublicRooms(selectedOnlineGameId))
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : '공개방 목록을 불러오지 못했습니다.',
+      )
+    } finally {
+      setIsPublicRoomsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!user || !selectedOnlineGameId || room || !appSyncConfigured) {
+      setPublicRooms([])
+      return
+    }
+    let active = true
+    const refresh = () => {
+      void listOnlinePublicRooms(selectedOnlineGameId)
+        .then((rooms) => { if (active) setPublicRooms(rooms) })
+        .catch(() => undefined)
+    }
+    refresh()
+    const intervalId = window.setInterval(refresh, 10_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [appSyncConfigured, room, selectedOnlineGameId, user])
+
   const selectAuthView = (view: Exclude<AuthView, 'confirm'>) => {
     setAuthView(view)
     setAuthNotice('')
@@ -482,6 +521,7 @@ function YachtOnlinePage() {
       const nextRoom = await createOnlineRoom(
         selectedOnlineGameId,
         user.kind === 'guest' ? user.nickname : undefined,
+        { isPublic: isPublicRoom, roomName },
       )
       setSelectedOnlineGameId(nextRoom.gameId)
       setRoom(nextRoom)
@@ -491,6 +531,25 @@ function YachtOnlinePage() {
           ? error.message
           : '게임방을 만들지 못했습니다.',
       )
+    } finally {
+      setIsLobbySubmitting(false)
+    }
+  }
+
+  const joinPublicRoom = async (roomCode: string) => {
+    if (!user || room || isLobbySubmitting) return
+    setIsLobbySubmitting(true)
+    setNotice('')
+    try {
+      const nextRoom = await joinOnlineRoom(
+        roomCode,
+        user.kind === 'guest' ? user.nickname : undefined,
+      )
+      setSelectedOnlineGameId(nextRoom.gameId)
+      setRoom(nextRoom)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '공개방에 참가하지 못했습니다.')
+      void refreshPublicRooms()
     } finally {
       setIsLobbySubmitting(false)
     }
@@ -1529,7 +1588,27 @@ function YachtOnlinePage() {
             <article className="lobby-action-card">
               <span aria-hidden="true">＋</span>
               <h2>새 게임방 만들기</h2>
-              <p>방장이 되어 친구를 기다리고 초대 코드를 공유합니다.</p>
+              <p>공개방으로 만들면 다른 사용자가 목록에서 바로 참가할 수 있습니다.</p>
+              <div className="create-room-options">
+                <label>
+                  방 이름
+                  <input
+                    type="text"
+                    value={roomName}
+                    maxLength={24}
+                    placeholder={`${user.nickname}의 게임방`}
+                    onChange={(event) => setRoomName(event.target.value)}
+                  />
+                </label>
+                <label className="public-room-toggle">
+                  <input
+                    type="checkbox"
+                    checked={isPublicRoom}
+                    onChange={(event) => setIsPublicRoom(event.target.checked)}
+                  />
+                  <span>공개방으로 만들기</span>
+                </label>
+              </div>
               <button
                 type="button"
                 disabled={
@@ -1580,6 +1659,59 @@ function YachtOnlinePage() {
               </form>
             </article>
           </div>
+
+          <section className="public-room-browser" aria-labelledby="public-room-title">
+            <div className="public-room-browser-heading">
+              <div>
+                <p className="eyebrow">PUBLIC ROOMS</p>
+                <h2 id="public-room-title">공개방 찾기</h2>
+                <p>현재 선택한 게임의 참가 가능한 방만 표시합니다.</p>
+              </div>
+              <button
+                type="button"
+                disabled={isPublicRoomsLoading || isLobbySubmitting}
+                onClick={() => void refreshPublicRooms()}
+              >
+                {isPublicRoomsLoading ? '불러오는 중…' : '새로고침'}
+              </button>
+            </div>
+
+            {publicRooms.length > 0 ? (
+              <div className="public-room-list">
+                {publicRooms.map((publicRoom) => (
+                  <article key={publicRoom.roomCode}>
+                    <div className="public-room-info">
+                      <span>{publicRoom.status === 'ready' ? '시작 준비 완료' : '참가자 대기 중'}</span>
+                      <h3>{publicRoom.roomName}</h3>
+                      <p>
+                        방장 {publicRoom.hostNickname} · {publicRoom.playerCount}/{publicRoom.maxPlayers}명
+                      </p>
+                      {publicRoom.rpsSettings && (
+                        <small>
+                          {publicRoom.rpsSettings.mode === 'tournament' ? '1:1 토너먼트' : '전체 난투전'}
+                          {' · '}{publicRoom.rpsSettings.timeLimitSeconds}초
+                          {' · '}{publicRoom.rpsSettings.winsRequired}
+                          {publicRoom.rpsSettings.mode === 'tournament' ? '승 선취' : '생명'}
+                        </small>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isLobbySubmitting}
+                      onClick={() => void joinPublicRoom(publicRoom.roomCode)}
+                    >
+                      참가
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="public-room-empty">
+                <strong>참가 가능한 공개방이 없습니다.</strong>
+                <p>새 공개방을 만들면 다른 사용자에게 바로 표시됩니다.</p>
+              </div>
+            )}
+          </section>
 
           {notice && (
             <p className="lobby-notice" role="status">

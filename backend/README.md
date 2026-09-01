@@ -21,10 +21,15 @@ MATCHES_TABLE=MiniGameJoinMatches
 CHAT_MESSAGES_TABLE=MiniGameJoinChatMessages
 PLAYER_MATCHES_TABLE=MiniGameJoinPlayerMatches
 GAME_STATS_TABLE=MiniGameJoinGameStats
+FRIENDS_TABLE=MiniGameJoinFriends
 COGNITO_USER_POOL_ID=ap-northeast-2_wKEL9hhbQ
 COGNITO_APP_CLIENT_ID=5icj3sfkbd83t6fdpuas69damg
 COGNITO_IDENTITY_POOL_ID=ap-northeast-2:실제_Identity_Pool_UUID
 ```
+
+`MiniGameJoinRooms`에는 공개방 조회용 GSI
+`publicGameId-createdAt-index`가 필요합니다. Partition key는 `publicGameId`,
+Sort key는 `createdAt`이며 두 키 모두 String입니다.
 
 ## 보안 원칙
 

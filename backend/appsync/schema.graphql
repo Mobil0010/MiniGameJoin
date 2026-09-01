@@ -146,6 +146,18 @@ type Room @aws_cognito_user_pools @aws_iam {
   expiresAt: AWSTimestamp!
 }
 
+type PublicRoom @aws_cognito_user_pools @aws_iam {
+  roomCode: ID!
+  roomName: String!
+  gameId: String!
+  status: RoomStatus!
+  playerCount: Int!
+  maxPlayers: Int!
+  hostNickname: String!
+  rpsSettings: RpsSettings
+  createdAt: AWSDateTime!
+}
+
 type ChatMessage @aws_cognito_user_pools @aws_iam {
   id: ID!
   roomCode: ID!
@@ -220,6 +232,9 @@ type Query {
   me: UserProfile!
   myGameStats(gameId: String!): GameStats!
   room(roomCode: ID!): Room! @aws_cognito_user_pools @aws_iam
+  listPublicRooms(gameId: String!, limit: Int): [PublicRoom!]!
+    @aws_cognito_user_pools
+    @aws_iam
   listChatMessages(roomCode: ID!, channel: ChatChannel!, limit: Int): [ChatMessage!]!
     @aws_cognito_user_pools
     @aws_iam
@@ -234,7 +249,12 @@ type Mutation {
   updateNickname(nickname: String!): UserProfile!
   deleteMyProfile: Boolean!
 
-  createRoom(gameId: String, guestNickname: String): Room!
+  createRoom(
+    gameId: String
+    guestNickname: String
+    isPublic: Boolean
+    roomName: String
+  ): Room!
     @aws_cognito_user_pools
     @aws_iam
   joinRoom(roomCode: ID!, guestNickname: String): Room!
