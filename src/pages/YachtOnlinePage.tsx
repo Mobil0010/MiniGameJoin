@@ -36,7 +36,6 @@ import {
   ensureOnlineProfile,
   getOnlineRoom,
   getOnlineProfile,
-  getMyGameStats,
   isAppSyncConfigured,
   isGuestOnlineConfigured,
   joinOnlineRoom,
@@ -65,7 +64,6 @@ import {
 import type {
   OnlineRoom,
   OnlineGameId,
-  OnlineGameStats,
   OnlineUser,
   PublicOnlineRoom,
 } from '../features/online-multiplayer/types'
@@ -98,7 +96,6 @@ function YachtOnlinePage() {
   const [isLobbySubmitting, setIsLobbySubmitting] = useState(false)
   const [showMemberProfile, setShowMemberProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
-  const [currentGameStats, setCurrentGameStats] = useState<OnlineGameStats | null>(null)
   const [rpsAudioMuted, setRpsAudioMutedState] = useState(isRpsAudioMuted)
   const [profileError, setProfileError] = useState('')
   const [profileNotice, setProfileNotice] = useState('')
@@ -127,26 +124,6 @@ function YachtOnlinePage() {
     room?.players
       .filter((player) => player.isPlaying)
       .sort((left, right) => (left.slot ?? 99) - (right.slot ?? 99)) ?? []
-
-  useEffect(() => {
-    let active = true
-    if (
-      user?.kind !== 'member' ||
-      !selectedOnlineGameId ||
-      room?.status === 'playing'
-    ) {
-      setCurrentGameStats(null)
-      return () => { active = false }
-    }
-    void getMyGameStats(selectedOnlineGameId)
-      .then((stats) => {
-        if (active) setCurrentGameStats(stats)
-      })
-      .catch(() => {
-        if (active) setCurrentGameStats(null)
-      })
-    return () => { active = false }
-  }, [room?.status, selectedOnlineGameId, user?.id, user?.kind])
 
   useEffect(() => {
     if (!shouldPlayRpsLobbyMusic) {
@@ -1591,28 +1568,7 @@ function YachtOnlinePage() {
             </div>
           </div>
 
-          {user.kind === 'member' ? currentGameStats ? (
-            <section className="member-stats" aria-label={`${selectedOnlineGameId} 회원 전적`}>
-              <div>
-                <span>승리</span>
-                <strong>{currentGameStats.wins}</strong>
-              </div>
-              <div>
-                <span>패배</span>
-                <strong>{currentGameStats.losses}</strong>
-              </div>
-              <div>
-                <span>무승부</span>
-                <strong>{currentGameStats.draws}</strong>
-              </div>
-              <div>
-                <span>승률</span>
-                <strong>{currentGameStats.winRate}%</strong>
-              </div>
-            </section>
-          ) : (
-            <p className="guest-stats-notice">게임별 전적을 불러오는 중…</p>
-          ) : (
+          {user.kind === 'guest' && (
             <p className="guest-stats-notice">
               게스트 경기 결과는 계정 전적에 저장되지 않습니다.
             </p>

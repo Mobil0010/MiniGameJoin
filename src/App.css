@@ -455,33 +455,6 @@
   gap: 18px;
 }
 
-.member-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.member-stats > div {
-  padding: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 16px;
-}
-
-.member-stats span {
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.member-stats strong {
-  color: var(--color-primary-dark);
-  font-size: 25px;
-}
-
 .guest-stats-notice {
   padding: 12px 15px;
   color: var(--color-muted);
@@ -3497,10 +3470,6 @@
     width: 40px;
   }
 
-  .member-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .yacht-layout {
     grid-template-columns: 1fr;
     grid-template-areas: none;
@@ -3681,13 +3650,6 @@
 
   .match-history-item > button {
     width: 100%;
-  }
-
-  .member-stats > div {
-    padding: 14px;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
   }
 
   .join-room-form {
@@ -4861,7 +4823,6 @@
   font-weight: 900;
 }
 
-.member-stats > div,
 .room-member,
 .rps-player-chip,
 .rps-hand-grid button,
