@@ -1330,33 +1330,6 @@
   background: var(--color-primary);
 }
 
-.match-history-summary {
-  margin-top: 22px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.match-history-summary > div {
-  padding: 16px;
-  display: grid;
-  gap: 5px;
-  text-align: center;
-  background: var(--color-primary-soft);
-  border-radius: 13px;
-}
-
-.match-history-summary span {
-  color: var(--color-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.match-history-summary strong {
-  color: var(--color-primary-dark);
-  font-size: 24px;
-}
-
 .match-history-empty {
   margin: 18px 0;
   padding: 24px;
@@ -3524,8 +3497,7 @@
     width: 40px;
   }
 
-  .member-stats,
-  .match-history-summary {
+  .member-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

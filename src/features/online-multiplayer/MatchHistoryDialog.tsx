@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SCORE_CATEGORY_LABELS } from '../../games/yacht-dice/constants'
 import {
-  getMyGameStats,
   getMyMatchHistory,
   getOnlineMatchDetail,
 } from './appSyncApi'
@@ -9,7 +8,6 @@ import type {
   MatchDetail,
   MatchHistoryItem,
   OnlineGameId,
-  OnlineGameStats,
   OnlineMatchEndReason,
 } from './types'
 
@@ -50,7 +48,6 @@ function MatchHistoryDialog({
   onClose,
 }: MatchHistoryDialogProps) {
   const [gameId, setGameId] = useState<OnlineGameId>(initialGameId)
-  const [stats, setStats] = useState<OnlineGameStats | null>(null)
   const [items, setItems] = useState<MatchHistoryItem[]>([])
   const [nextToken, setNextToken] = useState<string | null>(null)
   const [selectedMatch, setSelectedMatch] = useState<MatchDetail | null>(null)
@@ -91,12 +88,11 @@ function MatchHistoryDialog({
     setNextToken(null)
     setSelectedMatch(null)
 
-    void Promise.all([getMyGameStats(gameId), getMyMatchHistory(gameId)])
-      .then(([nextStats, page]) => {
+    void getMyMatchHistory(gameId)
+      .then((page) => {
         if (!active) {
           return
         }
-        setStats(nextStats)
         setItems(page.items)
         setNextToken(page.nextToken)
       })
@@ -230,25 +226,6 @@ function MatchHistoryDialog({
             {GAME_IDS.map((id) => (
               <span className={id === gameId ? 'active' : ''} key={id} />
             ))}
-          </div>
-        </div>
-
-        <div className="match-history-summary">
-          <div>
-            <span>승리</span>
-            <strong>{stats?.wins ?? 0}</strong>
-          </div>
-          <div>
-            <span>패배</span>
-            <strong>{stats?.losses ?? 0}</strong>
-          </div>
-          <div>
-            <span>무승부</span>
-            <strong>{stats?.draws ?? 0}</strong>
-          </div>
-          <div>
-            <span>승률</span>
-            <strong>{stats?.winRate ?? 0}%</strong>
           </div>
         </div>
 
