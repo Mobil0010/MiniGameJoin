@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getOnlineSpeedQuizPrompt,
   returnOnlineRoomToWaiting,
   scoreOnlineSpeedQuizPrompt,
   startOnlineSpeedQuizTurn,
+  submitOnlineSpeedQuizAnswer,
 } from './appSyncApi'
 import OnlineChatPanel from './OnlineChatPanel'
 import type { OnlineRoom, OnlineUser } from './types'
@@ -30,12 +31,16 @@ export default function OnlineSpeedQuizGame({
   const [remaining, setRemaining] = useState(secondsUntil(room.speedQuizTurnDeadline))
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [notice, setNotice] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [answerFeedback, setAnswerFeedback] = useState('')
   const timeoutVersionRef = useRef<number | null>(null)
   const participant = room.players.find((player) => player.userId === user.id)
   const describer = room.players.find(
     (player) => player.userId === room.speedQuizDescriberId,
   )
   const isDescriber = room.speedQuizDescriberId === user.id
+  const isActiveTeamGuesser =
+    !isDescriber && participant?.speedQuizTeam === room.speedQuizActiveTeam
   const canResolveTimeout = isDescriber || participant?.isHost === true
   const teams = useMemo(() => ({
     A: room.players.filter((player) => player.speedQuizTeam === 'A'),
@@ -62,6 +67,11 @@ export default function OnlineSpeedQuizGame({
   }, [isDescriber, room.code, room.speedQuizPhase, room.speedQuizPromptKey])
 
   useEffect(() => {
+    setAnswer('')
+    setAnswerFeedback('')
+  }, [room.speedQuizPromptKey, room.speedQuizTurn])
+
+  useEffect(() => {
     if (
       room.status !== 'playing' ||
       room.speedQuizPhase !== 'turn' ||
@@ -82,6 +92,27 @@ export default function OnlineSpeedQuizGame({
       onRoomChange(await action())
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '게임 상태를 변경하지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const submitAnswer = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const submittedAnswer = answer.trim()
+    if (!submittedAnswer || isSubmitting) return
+
+    setIsSubmitting(true)
+    setAnswerFeedback('')
+    try {
+      const nextRoom = await submitOnlineSpeedQuizAnswer(room, submittedAnswer)
+      setAnswer('')
+      setAnswerFeedback('정답! +1점')
+      onRoomChange(nextRoom)
+    } catch (error) {
+      setAnswerFeedback(
+        error instanceof Error ? error.message : '정답을 확인하지 못했습니다.',
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -157,7 +188,39 @@ export default function OnlineSpeedQuizGame({
                   </button>
                 </div>
               </>
-            ) : <p className="speed-quiz-hidden-prompt">설명을 듣고 정답을 외쳐!<br /><small>제시어는 설명자 화면에만 표시돼.</small></p>}
+            ) : isActiveTeamGuesser ? (
+              <div className="speed-quiz-answer-area">
+                <p className="speed-quiz-hidden-prompt">설명을 듣고 정답을 입력해!</p>
+                <form onSubmit={submitAnswer}>
+                  <label htmlFor="speed-quiz-answer">정답 입력</label>
+                  <div>
+                    <input
+                      id="speed-quiz-answer"
+                      type="text"
+                      value={answer}
+                      maxLength={80}
+                      autoComplete="off"
+                      autoCapitalize="off"
+                      placeholder="정답을 입력하고 Enter"
+                      disabled={isSubmitting || remaining <= 0}
+                      onChange={(event) => setAnswer(event.target.value)}
+                    />
+                    <button type="submit" disabled={isSubmitting || !answer.trim() || remaining <= 0}>
+                      정답 제출
+                    </button>
+                  </div>
+                </form>
+                {answerFeedback && (
+                  <p className="speed-quiz-answer-feedback" role="status">{answerFeedback}</p>
+                )}
+                <small>띄어쓰기는 달라도 정답으로 인정돼.</small>
+              </div>
+            ) : (
+              <p className="speed-quiz-hidden-prompt">
+                {room.speedQuizActiveTeam}팀이 정답을 맞히고 있어!<br />
+                <small>상대 팀 차례에는 정답을 입력할 수 없어.</small>
+              </p>
+            )}
           </>
         )}
         {notice && <p className="lobby-notice">{notice}</p>}

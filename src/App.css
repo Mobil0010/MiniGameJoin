@@ -3388,6 +3388,63 @@
 
 .speed-quiz-hidden-prompt small { font-size: 16px; }
 .speed-quiz-actions { display: flex; justify-content: center; gap: 12px; margin-top: 22px; }
+.speed-quiz-answer-area {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.speed-quiz-answer-area .speed-quiz-hidden-prompt {
+  margin-bottom: 22px;
+}
+
+.speed-quiz-answer-area form {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+
+.speed-quiz-answer-area label {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.speed-quiz-answer-area form > div {
+  display: flex;
+  gap: 10px;
+}
+
+.speed-quiz-answer-area input {
+  min-width: 0;
+  flex: 1;
+  padding: 14px 16px;
+  border: 3px solid var(--color-ink);
+  border-radius: 14px;
+  background: #fff;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.speed-quiz-answer-area button {
+  padding: 12px 18px;
+  border: 2px solid var(--color-ink);
+  border-radius: 14px;
+  color: var(--color-ink);
+  background: var(--color-primary);
+  box-shadow: 0 4px 0 var(--color-ink);
+  font-weight: 900;
+}
+
+.speed-quiz-answer-feedback {
+  min-height: 24px;
+  margin: 12px 0 4px;
+  color: #b32135;
+  font-weight: 900;
+}
+
+.speed-quiz-answer-area > small {
+  color: var(--color-muted);
+  font-weight: 700;
+}
 .speed-quiz-chat { padding: 24px; }
 .speed-quiz-finished { padding: 48px 24px; text-align: center; }
 .speed-quiz-finished .speed-quiz-scoreboard { justify-content: center; margin: 30px 0; }
@@ -3396,6 +3453,7 @@
   .speed-quiz-header { align-items: flex-start; flex-direction: column; }
   .speed-quiz-team-grid { grid-template-columns: 1fr; }
   .speed-quiz-stage { min-height: 360px; }
+  .speed-quiz-answer-area form > div { flex-direction: column; }
 }
 
 @media (max-width: 1240px) {

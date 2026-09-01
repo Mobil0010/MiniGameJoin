@@ -26,6 +26,10 @@ import {
   shuffleIds,
   takeNextTournamentMatch,
 } from './rps.mjs'
+import {
+  normalizeSpeedQuizAnswer,
+  SPEED_QUIZ_WORDS,
+} from './speed-quiz-words.mjs'
 
 const USERS_TABLE = process.env.USERS_TABLE
 const ROOMS_TABLE = process.env.ROOMS_TABLE
@@ -49,17 +53,6 @@ const PUBLIC_ROOMS_INDEX = 'publicGameId-createdAt-index'
 const SPEED_QUIZ_TURN_SECONDS = 60
 const SPEED_QUIZ_TOTAL_TURNS = 6
 const SPEED_QUIZ_MAX_PASSES = 3
-const SPEED_QUIZ_WORDS = [
-  '피자', '기린', '우산', '선풍기', '축구', '소방관', '도서관', '놀이공원',
-  '김치찌개', '스마트폰', '지하철', '무지개', '팝콘', '수영장', '택배',
-  '아이스크림', '고양이', '편의점', '비행기', '생일케이크', '마술사',
-  '세탁기', '등산', '해바라기', '경찰관', '라면', '노래방', '횡단보도',
-  '눈사람', '사진기', '치과', '야구', '달팽이', '학교', '전자레인지',
-  '딸기', '캥거루', '엘리베이터', '영화관', '구급차', '피아노', '불꽃놀이',
-  '짜장면', '공룡', '컴퓨터', '동물원', '버스', '햄버거', '로봇', '해수욕장',
-  '자전거', '문어', '백화점', '겨울잠', '초콜릿', '우주선', '요리사',
-  '신호등', '바이올린', '치킨', '낙타', '병원', '보물찾기', '스키',
-]
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -293,6 +286,24 @@ function pickSpeedQuizWord(room) {
   const availableWords = SPEED_QUIZ_WORDS.filter((word) => !usedWords.includes(word))
   const pool = availableWords.length > 0 ? availableWords : SPEED_QUIZ_WORDS
   return pool[randomInt(0, pool.length)]
+}
+
+function createNextSpeedQuizPromptState(room, result) {
+  const word = pickSpeedQuizWord(room)
+  const scoreKey = room.speedQuizActiveTeam === 'A'
+    ? 'speedQuizTeamAScore'
+    : 'speedQuizTeamBScore'
+  return {
+    ...room,
+    [scoreKey]: (room[scoreKey] ?? 0) + (result === 'correct' ? 1 : 0),
+    speedQuizPassCount:
+      (room.speedQuizPassCount ?? 0) + (result === 'pass' ? 1 : 0),
+    speedQuizPromptKey: (room.speedQuizPromptKey ?? 0) + 1,
+    _speedQuizWord: word,
+    _speedQuizUsedWords: [...(room._speedQuizUsedWords ?? []), word],
+    version: room.version + 1,
+    updatedAt: nowIso(),
+  }
 }
 
 function toProfileResponse(profile) {
@@ -2031,21 +2042,10 @@ async function scoreSpeedQuizPrompt(event) {
     if (result === 'pass' && (room.speedQuizPassCount ?? 0) >= SPEED_QUIZ_MAX_PASSES) {
       throw new Error(`패스는 차례당 ${SPEED_QUIZ_MAX_PASSES}회까지만 사용할 수 있습니다.`)
     }
-    const word = pickSpeedQuizWord(room)
-    const scoreKey = room.speedQuizActiveTeam === 'A'
-      ? 'speedQuizTeamAScore'
-      : 'speedQuizTeamBScore'
-    return putVersionedRoom({
-      ...room,
-      [scoreKey]: (room[scoreKey] ?? 0) + (result === 'correct' ? 1 : 0),
-      speedQuizPassCount:
-        (room.speedQuizPassCount ?? 0) + (result === 'pass' ? 1 : 0),
-      speedQuizPromptKey: (room.speedQuizPromptKey ?? 0) + 1,
-      _speedQuizWord: word,
-      _speedQuizUsedWords: [...(room._speedQuizUsedWords ?? []), word],
-      version: room.version + 1,
-      updatedAt: nowIso(),
-    }, room.version)
+    return putVersionedRoom(
+      createNextSpeedQuizPromptState(room, result),
+      room.version,
+    )
   }
 
   const currentTurn = room.speedQuizTurn ?? 1
@@ -2081,6 +2081,46 @@ async function scoreSpeedQuizPrompt(event) {
     version: room.version + 1,
     updatedAt: nowIso(),
   }, room.version)
+}
+
+async function submitSpeedQuizAnswer(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  if (
+    room.gameId !== 'speed-quiz' ||
+    room.status !== 'playing' ||
+    room.speedQuizPhase !== 'turn' ||
+    !room._speedQuizWord
+  ) {
+    throw new Error('진행 중인 스피드 퀴즈 문제가 없습니다.')
+  }
+  if (Date.now() >= new Date(room.speedQuizTurnDeadline).getTime()) {
+    throw new Error('제한 시간이 끝났습니다.')
+  }
+
+  const player = requireGamePlayer(room, userId)
+  if (
+    player.userId === room.speedQuizDescriberId ||
+    player.speedQuizTeam !== room.speedQuizActiveTeam
+  ) {
+    throw new Error('현재 문제를 맞히는 팀원만 정답을 입력할 수 있습니다.')
+  }
+
+  const rawAnswer = String(event.arguments.answer ?? '')
+  if (rawAnswer.trim().length < 1 || rawAnswer.length > 80) {
+    throw new Error('정답은 1자 이상 80자 이하로 입력해 주세요.')
+  }
+  if (
+    normalizeSpeedQuizAnswer(rawAnswer) !==
+    normalizeSpeedQuizAnswer(room._speedQuizWord)
+  ) {
+    throw new Error('오답입니다. 다시 생각해 봐!')
+  }
+
+  return putVersionedRoom(
+    createNextSpeedQuizPromptState(room, 'correct'),
+    room.version,
+  )
 }
 
 async function submitRpsHand(event) {
@@ -2885,6 +2925,7 @@ const handlers = {
   advanceRpsRound,
   startSpeedQuizTurn,
   scoreSpeedQuizPrompt,
+  submitSpeedQuizAnswer,
   heartbeat,
   claimDisconnectWin,
   sendChatMessage,

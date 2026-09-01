@@ -931,6 +931,29 @@ export async function scoreOnlineSpeedQuizPrompt(
   return mapRoom(data.scoreSpeedQuizPrompt)
 }
 
+export async function submitOnlineSpeedQuizAnswer(
+  room: OnlineRoom,
+  answer: string,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ submitSpeedQuizAnswer: RoomDto }>(
+    `mutation SubmitSpeedQuizAnswer(
+      $roomCode: ID!
+      $answer: String!
+      $expectedVersion: Int!
+    ) {
+      submitSpeedQuizAnswer(
+        roomCode: $roomCode
+        answer: $answer
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    { roomCode: room.code, answer, expectedVersion: room.version },
+  )
+  return mapRoom(data.submitSpeedQuizAnswer)
+}
+
 export async function submitOnlineRpsHand(
   room: OnlineRoom,
   hand: RpsHand,

@@ -342,6 +342,11 @@ type Mutation {
     result: SpeedQuizPromptResult!
     expectedVersion: Int!
   ): Room! @aws_cognito_user_pools @aws_iam
+  submitSpeedQuizAnswer(
+    roomCode: ID!
+    answer: String!
+    expectedVersion: Int!
+  ): Room! @aws_cognito_user_pools @aws_iam
 
   heartbeat(roomCode: ID!): Boolean! @aws_cognito_user_pools @aws_iam
   claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
@@ -379,6 +384,7 @@ type Subscription {
         "advanceRpsRound"
         "startSpeedQuizTurn"
         "scoreSpeedQuizPrompt"
+        "submitSpeedQuizAnswer"
       ]
     )
   onChatMessage(roomCode: ID!, channel: ChatChannel!): ChatMessage
