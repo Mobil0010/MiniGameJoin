@@ -1247,17 +1247,33 @@
   background: var(--color-primary);
 }
 
-.match-history-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.match-history-game-carousel {
+  position: relative;
   margin-top: 20px;
-  padding: 5px;
+  padding: 0 54px 22px;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.match-history-tabs-viewport {
+  overflow: hidden;
   border-radius: 14px;
   background: var(--color-disabled);
 }
 
+.match-history-tabs {
+  display: flex;
+  transition: transform 240ms ease;
+}
+
+.match-history-tab-slide {
+  flex: 0 0 100%;
+  padding: 5px;
+}
+
 .account-modal .match-history-tabs button {
+  width: 100%;
+  min-height: 48px;
   color: var(--color-muted);
   background: transparent;
 }
@@ -1266,6 +1282,52 @@
   color: #fff;
   background: var(--color-primary);
   box-shadow: 0 6px 16px rgba(91, 81, 232, 0.2);
+}
+
+.account-modal .match-history-game-arrow {
+  position: absolute;
+  top: 1px;
+  z-index: 1;
+  display: grid;
+  width: 44px;
+  height: 56px;
+  padding: 0;
+  place-items: center;
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary);
+  background: #fff;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.account-modal .match-history-game-arrow:hover {
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.match-history-game-arrow-left { left: 0; }
+.match-history-game-arrow-right { right: 0; }
+
+.match-history-game-dots {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  display: flex;
+  gap: 6px;
+  transform: translateX(-50%);
+}
+
+.match-history-game-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.match-history-game-dots .active {
+  width: 20px;
+  border-radius: 999px;
+  background: var(--color-primary);
 }
 
 .match-history-summary {
@@ -3395,6 +3457,14 @@
 }
 
 @media (max-width: 760px) {
+  .match-history-game-carousel {
+    padding-inline: 48px;
+  }
+
+  .account-modal .match-history-game-arrow {
+    width: 40px;
+  }
+
   .member-stats,
   .match-history-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

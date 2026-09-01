@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SCORE_CATEGORY_LABELS } from '../../games/yacht-dice/constants'
 import {
   getMyGameStats,
@@ -23,6 +23,8 @@ const GAME_LABELS: Record<OnlineGameId, string> = {
   'rock-paper-scissors': '가위바위보',
   'speed-quiz': '스피드 퀴즈',
 }
+
+const GAME_IDS = Object.keys(GAME_LABELS) as OnlineGameId[]
 
 const RESULT_LABELS = {
   win: '승리',
@@ -56,6 +58,30 @@ function MatchHistoryDialog({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
+  const touchStartXRef = useRef<number | null>(null)
+  const gameIndex = GAME_IDS.indexOf(gameId)
+
+  const selectGameAt = (index: number) => {
+    const nextGameId = GAME_IDS[index]
+    if (nextGameId && nextGameId !== gameId) {
+      setGameId(nextGameId)
+    }
+  }
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    touchStartXRef.current = event.touches[0]?.clientX ?? null
+  }
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = touchStartXRef.current
+    const endX = event.changedTouches[0]?.clientX
+    touchStartXRef.current = null
+    if (startX === null || endX === undefined) return
+
+    const distance = endX - startX
+    if (Math.abs(distance) < 45) return
+    selectGameAt(gameIndex + (distance < 0 ? 1 : -1))
+  }
 
   useEffect(() => {
     let active = true
@@ -151,21 +177,60 @@ function MatchHistoryDialog({
         <span>MATCH HISTORY</span>
         <h2 id="match-history-title">게임별 전적</h2>
 
-        <div className="match-history-tabs" role="tablist" aria-label="게임 선택">
-          {(Object.entries(GAME_LABELS) as Array<[OnlineGameId, string]>).map(
-            ([id, label]) => (
-              <button
-                className={gameId === id ? 'match-history-tab-active' : ''}
-                type="button"
-                role="tab"
-                aria-selected={gameId === id}
-                key={id}
-                onClick={() => setGameId(id)}
-              >
-                {label}
-              </button>
-            ),
+        <div
+          className="match-history-game-carousel"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={() => { touchStartXRef.current = null }}
+        >
+          {gameIndex > 0 && (
+            <button
+              className="match-history-game-arrow match-history-game-arrow-left"
+              type="button"
+              aria-label={`이전 게임: ${GAME_LABELS[GAME_IDS[gameIndex - 1]]}`}
+              onClick={() => selectGameAt(gameIndex - 1)}
+            >
+              ‹
+            </button>
           )}
+          <div className="match-history-tabs-viewport">
+            <div
+              className="match-history-tabs"
+              role="tablist"
+              aria-label="게임 선택"
+              style={{ transform: `translateX(-${gameIndex * 100}%)` }}
+            >
+              {GAME_IDS.map((id) => (
+                <div className="match-history-tab-slide" key={id}>
+                  <button
+                    className={gameId === id ? 'match-history-tab-active' : ''}
+                    type="button"
+                    role="tab"
+                    aria-selected={gameId === id}
+                    tabIndex={gameId === id ? 0 : -1}
+                    onClick={() => setGameId(id)}
+                  >
+                    {GAME_LABELS[id]}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          {gameIndex < GAME_IDS.length - 1 && (
+            <button
+              className="match-history-game-arrow match-history-game-arrow-right"
+              type="button"
+              aria-label={`다음 게임: ${GAME_LABELS[GAME_IDS[gameIndex + 1]]}`}
+              onClick={() => selectGameAt(gameIndex + 1)}
+            >
+              ›
+            </button>
+          )}
+          <div className="match-history-game-dots" aria-hidden="true">
+            {GAME_IDS.map((id) => (
+              <span className={id === gameId ? 'active' : ''} key={id} />
+            ))}
+          </div>
         </div>
 
         <div className="match-history-summary">
