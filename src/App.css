@@ -3456,6 +3456,7 @@
   .speed-quiz-answer-area form > div { flex-direction: column; }
 }
 
+
 @media (max-width: 1240px) {
   .yacht-layout {
     grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);

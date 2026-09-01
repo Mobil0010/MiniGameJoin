@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Local QA harnesses
+/speed-quiz-qa.html
+/src/dev/
+/스피드퀴즈-QA-실행.cmd
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

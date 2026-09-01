@@ -14,6 +14,24 @@ interface Props {
   user: OnlineUser
   onRoomChange: (room: OnlineRoom) => void
   onReturnToLobby: () => void
+  services?: SpeedQuizServices
+  showChat?: boolean
+}
+
+export interface SpeedQuizServices {
+  getPrompt: typeof getOnlineSpeedQuizPrompt
+  returnToWaiting: typeof returnOnlineRoomToWaiting
+  scorePrompt: typeof scoreOnlineSpeedQuizPrompt
+  startTurn: typeof startOnlineSpeedQuizTurn
+  submitAnswer: typeof submitOnlineSpeedQuizAnswer
+}
+
+const DEFAULT_SERVICES: SpeedQuizServices = {
+  getPrompt: getOnlineSpeedQuizPrompt,
+  returnToWaiting: returnOnlineRoomToWaiting,
+  scorePrompt: scoreOnlineSpeedQuizPrompt,
+  startTurn: startOnlineSpeedQuizTurn,
+  submitAnswer: submitOnlineSpeedQuizAnswer,
 }
 
 function secondsUntil(deadline?: string | null) {
@@ -26,6 +44,8 @@ export default function OnlineSpeedQuizGame({
   user,
   onRoomChange,
   onReturnToLobby,
+  services = DEFAULT_SERVICES,
+  showChat = true,
 }: Props) {
   const [prompt, setPrompt] = useState('')
   const [remaining, setRemaining] = useState(secondsUntil(room.speedQuizTurnDeadline))
@@ -61,10 +81,10 @@ export default function OnlineSpeedQuizGame({
   useEffect(() => {
     setPrompt('')
     if (!isDescriber || room.speedQuizPhase !== 'turn') return
-    void getOnlineSpeedQuizPrompt(room.code)
+    void services.getPrompt(room.code)
       .then(setPrompt)
       .catch((error) => setNotice(error instanceof Error ? error.message : '제시어를 불러오지 못했습니다.'))
-  }, [isDescriber, room.code, room.speedQuizPhase, room.speedQuizPromptKey])
+  }, [isDescriber, room.code, room.speedQuizPhase, room.speedQuizPromptKey, services])
 
   useEffect(() => {
     setAnswer('')
@@ -80,10 +100,10 @@ export default function OnlineSpeedQuizGame({
       timeoutVersionRef.current === room.version
     ) return
     timeoutVersionRef.current = room.version ?? null
-    void scoreOnlineSpeedQuizPrompt(room, 'timeout')
+    void services.scorePrompt(room, 'timeout')
       .then(onRoomChange)
       .catch(() => undefined)
-  }, [canResolveTimeout, onRoomChange, remaining, room])
+  }, [canResolveTimeout, onRoomChange, remaining, room, services])
 
   const run = async (action: () => Promise<OnlineRoom>) => {
     setIsSubmitting(true)
@@ -105,7 +125,7 @@ export default function OnlineSpeedQuizGame({
     setIsSubmitting(true)
     setAnswerFeedback('')
     try {
-      const nextRoom = await submitOnlineSpeedQuizAnswer(room, submittedAnswer)
+      const nextRoom = await services.submitAnswer(room, submittedAnswer)
       setAnswer('')
       setAnswerFeedback('정답! +1점')
       onRoomChange(nextRoom)
@@ -130,7 +150,7 @@ export default function OnlineSpeedQuizGame({
           <strong>B팀 <em>{room.speedQuizTeamBScore ?? 0}</em></strong>
         </div>
         <div className="speed-quiz-actions">
-          <button type="button" disabled={isSubmitting} onClick={() => void run(() => returnOnlineRoomToWaiting(room))}>
+          <button type="button" disabled={isSubmitting} onClick={() => void run(() => services.returnToWaiting(room))}>
             같은 방에서 다시 하기
           </button>
           <button type="button" className="secondary-action" onClick={onReturnToLobby}>온라인 로비로 나가기</button>
@@ -171,7 +191,7 @@ export default function OnlineSpeedQuizGame({
           isDescriber ? (
             <>
               <p>준비되면 시작해. 시작과 동시에 60초가 흘러.</p>
-              <button type="button" disabled={isSubmitting} onClick={() => void run(() => startOnlineSpeedQuizTurn(room))}>내 차례 시작</button>
+              <button type="button" disabled={isSubmitting} onClick={() => void run(() => services.startTurn(room))}>내 차례 시작</button>
             </>
           ) : <p>설명자가 준비하고 있어. 제시어는 설명자에게만 보여.</p>
         ) : (
@@ -182,8 +202,8 @@ export default function OnlineSpeedQuizGame({
                 <div className="speed-quiz-prompt">{prompt || '제시어 불러오는 중…'}</div>
                 <p>정답 단어와 포함된 글자는 말하면 안 돼.</p>
                 <div className="speed-quiz-actions">
-                  <button type="button" disabled={isSubmitting || !prompt} onClick={() => void run(() => scoreOnlineSpeedQuizPrompt(room, 'correct'))}>정답 +1</button>
-                  <button type="button" className="secondary-action" disabled={isSubmitting || !prompt || (room.speedQuizPassCount ?? 0) >= 3} onClick={() => void run(() => scoreOnlineSpeedQuizPrompt(room, 'pass'))}>
+                  <button type="button" disabled={isSubmitting || !prompt} onClick={() => void run(() => services.scorePrompt(room, 'correct'))}>정답 +1</button>
+                  <button type="button" className="secondary-action" disabled={isSubmitting || !prompt || (room.speedQuizPassCount ?? 0) >= 3} onClick={() => void run(() => services.scorePrompt(room, 'pass'))}>
                     패스 {room.speedQuizPassCount ?? 0}/3
                   </button>
                 </div>
@@ -204,6 +224,15 @@ export default function OnlineSpeedQuizGame({
                       placeholder="정답을 입력하고 Enter"
                       disabled={isSubmitting || remaining <= 0}
                       onChange={(event) => setAnswer(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === 'Enter' &&
+                          !event.nativeEvent.isComposing
+                        ) {
+                          event.preventDefault()
+                          event.currentTarget.form?.requestSubmit()
+                        }
+                      }}
                     />
                     <button type="submit" disabled={isSubmitting || !answer.trim() || remaining <= 0}>
                       정답 제출
@@ -226,10 +255,12 @@ export default function OnlineSpeedQuizGame({
         {notice && <p className="lobby-notice">{notice}</p>}
       </div>
 
-      <div className="speed-quiz-chat">
-        <h2>게임 채팅</h2>
-        <OnlineChatPanel roomCode={room.code} channel="game" user={user} isOpen onClose={() => undefined} onUnreadChange={() => undefined} />
-      </div>
+      {showChat && (
+        <div className="speed-quiz-chat">
+          <h2>게임 채팅</h2>
+          <OnlineChatPanel roomCode={room.code} channel="game" user={user} isOpen onClose={() => undefined} onUnreadChange={() => undefined} />
+        </div>
+      )}
     </section>
   )
 }
