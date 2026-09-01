@@ -1251,6 +1251,26 @@ function YachtOnlinePage() {
               </p>
             </div>
             <div className="profile-actions">
+              {user.kind === 'member' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowMemberProfile(true)}
+                  >
+                    회원정보 수정
+                  </button>
+                  <button type="button" onClick={openMatchHistory}>
+                    전적 상세
+                  </button>
+                  <button
+                    className="delete-account-button"
+                    type="button"
+                    onClick={() => setShowAccountDeletion(true)}
+                  >
+                    회원탈퇴
+                  </button>
+                </>
+              )}
               <button type="button" onClick={leaveOnline}>
                 {user.kind === 'member' ? '로그아웃' : '게스트 나가기'}
               </button>
