@@ -49,6 +49,7 @@ import {
 } from '../features/online-multiplayer/appSyncApi'
 import OnlineYachtGame from '../features/online-multiplayer/OnlineYachtGame'
 import OnlineRpsGame from '../features/online-multiplayer/OnlineRpsGame'
+import OnlineSpeedQuizGame from '../features/online-multiplayer/OnlineSpeedQuizGame'
 import OnlineChatPanel from '../features/online-multiplayer/OnlineChatPanel'
 import FriendsPanel from '../features/online-multiplayer/FriendsPanel'
 import {
@@ -954,6 +955,8 @@ function YachtOnlinePage() {
                   ? 'Yacht Dice 온라인 로비'
                   : selectedOnlineGameId === 'rock-paper-scissors'
                     ? '가위바위보 온라인 로비'
+                    : selectedOnlineGameId === 'speed-quiz'
+                      ? '스피드 퀴즈 온라인 로비'
                     : '웹 멀티플레이'}
               </h1>
               <p>
@@ -1279,7 +1282,7 @@ function YachtOnlinePage() {
 
           <div className="section-title">
             <h2>온라인 게임 목록</h2>
-            <span>2개 플레이 가능 · 1개 준비 중</span>
+            <span>3개 플레이 가능</span>
           </div>
 
           <div className="game-grid">
@@ -1327,19 +1330,26 @@ function YachtOnlinePage() {
               <strong>온라인 로비 입장 →</strong>
             </button>
 
-            <article className="game-card game-card-soon">
+            <button
+              className="game-card game-card-ready online-game-card"
+              type="button"
+              onClick={() => {
+                setSelectedOnlineGameId('speed-quiz')
+                setNotice('')
+              }}
+            >
               <span className="game-icon" aria-hidden="true">
                 ?
               </span>
               <div>
-                <span className="badge">준비 중</span>
+                <span className="badge">4~10명 · 팀 릴레이</span>
                 <h3>스피드 퀴즈</h3>
                 <p>
-                  친구와 제한 시간 안에 문제를 맞히는 온라인 퀴즈 게임입니다.
+                  두 팀이 번갈아 설명하고 60초 안에 최대한 많은 제시어를 맞힙니다.
                 </p>
               </div>
-              <strong>추후 제공 예정</strong>
-            </article>
+              <strong>온라인 로비 입장 →</strong>
+            </button>
           </div>
         </section>
       ) : room && isOnlineMatchVisible ? (
@@ -1351,6 +1361,13 @@ function YachtOnlinePage() {
             onReturnToLobby={returnToLobby}
             audioMuted={rpsAudioMuted}
             onToggleAudio={toggleRpsAudio}
+          />
+        ) : room.gameId === 'speed-quiz' ? (
+          <OnlineSpeedQuizGame
+            room={room}
+            user={user}
+            onRoomChange={setRoom}
+            onReturnToLobby={returnToLobby}
           />
         ) : (
           <OnlineYachtGame
@@ -1389,6 +1406,8 @@ function YachtOnlinePage() {
             <p className="room-role-guide">
               {room.gameId === 'rock-paper-scissors'
                 ? '게임 시작 전 참가자는 모두 플레이합니다. 진행 중 들어온 참가자는 현재 게임을 관전합니다.'
+                : room.gameId === 'speed-quiz'
+                  ? '4~10명이 모두 플레이합니다. 입장 순서대로 A팀과 B팀에 균형 배정됩니다.'
                 : '방장과 첫 입장자는 자동으로 플레이어가 되고, 이후 참가자는 관전합니다. 진행 중 입장한 참가자는 현재 경기에서 관전자로 고정됩니다.'}
             </p>
             <div className="room-member-grid">
@@ -1419,7 +1438,9 @@ function YachtOnlinePage() {
                   >
                     <span>
                       {participant.isHost ? '방장 · ' : ''}
-                      {participant.isPlaying
+                      {room.gameId === 'speed-quiz'
+                        ? `${participant.speedQuizTeam ?? (index % 2 === 0 ? 'A' : 'B')}팀`
+                        : participant.isPlaying
                         ? `${participant.slot ?? '-'}P`
                         : '관전자'}
                     </span>
@@ -1493,7 +1514,9 @@ function YachtOnlinePage() {
                   room.status === 'playing' ||
                   (room.gameId === 'yacht-dice'
                     ? selectedRoomPlayers.length !== 2
-                    : selectedRoomPlayers.length < 2) ||
+                    : room.gameId === 'speed-quiz'
+                      ? selectedRoomPlayers.length < 4 || selectedRoomPlayers.length > 10
+                      : selectedRoomPlayers.length < 2) ||
                   !selectedRoomPlayers.every((player) => player.isReady)
                 }
                 onClick={startGame}

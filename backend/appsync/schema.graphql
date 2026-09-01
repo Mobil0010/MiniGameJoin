@@ -59,6 +59,22 @@ enum RpsPhase {
   revealing
 }
 
+enum SpeedQuizTeam {
+  A
+  B
+}
+
+enum SpeedQuizPhase {
+  betweenTurns
+  turn
+}
+
+enum SpeedQuizPromptResult {
+  correct
+  pass
+  timeout
+}
+
 type RpsSettings @aws_cognito_user_pools @aws_iam {
   mode: RpsMode!
   timeLimitSeconds: Int!
@@ -110,6 +126,7 @@ type RoomPlayer @aws_cognito_user_pools @aws_iam {
   slot: Int
   isPlaying: Boolean
   scores: [ScoreEntry!]!
+  speedQuizTeam: SpeedQuizTeam
 }
 
 type Die @aws_cognito_user_pools @aws_iam {
@@ -141,6 +158,17 @@ type Room @aws_cognito_user_pools @aws_iam {
   rpsRoundWinnerIds: [ID!]!
   rpsRoundDeadline: AWSDateTime
   rpsRevealEndsAt: AWSDateTime
+  speedQuizPhase: SpeedQuizPhase
+  speedQuizTurn: Int
+  speedQuizTotalTurns: Int
+  speedQuizActiveTeam: SpeedQuizTeam
+  speedQuizDescriberId: ID
+  speedQuizTeamAScore: Int
+  speedQuizTeamBScore: Int
+  speedQuizPassCount: Int
+  speedQuizPromptKey: Int
+  speedQuizTurnDeadline: AWSDateTime
+  speedQuizWinnerTeam: SpeedQuizTeam
   createdAt: AWSDateTime!
   updatedAt: AWSDateTime!
   expiresAt: AWSTimestamp!
@@ -242,6 +270,7 @@ type Query {
   searchMembers(query: String!): [UserSearchResult!]!
   myMatchHistory(gameId: String!, limit: Int, nextToken: String): MatchHistoryPage!
   matchDetail(matchId: ID!): MatchDetail!
+  speedQuizPrompt(roomCode: ID!): String! @aws_cognito_user_pools @aws_iam
 }
 
 type Mutation {
@@ -305,6 +334,14 @@ type Mutation {
   advanceRpsRound(roomCode: ID!, expectedVersion: Int!): Room!
     @aws_cognito_user_pools
     @aws_iam
+  startSpeedQuizTurn(roomCode: ID!, expectedVersion: Int!): Room!
+    @aws_cognito_user_pools
+    @aws_iam
+  scoreSpeedQuizPrompt(
+    roomCode: ID!
+    result: SpeedQuizPromptResult!
+    expectedVersion: Int!
+  ): Room! @aws_cognito_user_pools @aws_iam
 
   heartbeat(roomCode: ID!): Boolean! @aws_cognito_user_pools @aws_iam
   claimDisconnectWin(roomCode: ID!, expectedVersion: Int!): Room!
@@ -340,6 +377,8 @@ type Subscription {
         "claimDisconnectWin"
         "submitRpsHand"
         "advanceRpsRound"
+        "startSpeedQuizTurn"
+        "scoreSpeedQuizPrompt"
       ]
     )
   onChatMessage(roomCode: ID!, channel: ChatChannel!): ChatMessage

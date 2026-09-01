@@ -3198,6 +3198,144 @@
   }
 }
 
+.speed-quiz-game {
+  display: grid;
+  gap: 24px;
+  max-width: 1080px;
+  margin: 28px auto 64px;
+}
+
+.speed-quiz-header,
+.speed-quiz-stage,
+.speed-quiz-team,
+.speed-quiz-chat,
+.speed-quiz-finished {
+  border: 3px solid var(--color-ink);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 7px 8px 0 rgb(37 29 75 / 16%);
+}
+
+.speed-quiz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px;
+}
+
+.speed-quiz-header h1,
+.speed-quiz-finished h1 {
+  margin: 4px 0;
+  font-size: clamp(38px, 7vw, 72px);
+  line-height: .95;
+}
+
+.speed-quiz-scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: clamp(22px, 4vw, 38px);
+  white-space: nowrap;
+}
+
+.speed-quiz-scoreboard strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-quiz-scoreboard em {
+  color: var(--color-primary-dark);
+  font-style: normal;
+  font-size: 1.35em;
+}
+
+.speed-quiz-team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.speed-quiz-team {
+  padding: 20px 24px;
+}
+
+.speed-quiz-team-a { background: #e9f3ff; }
+.speed-quiz-team-b { background: #fff0f1; }
+.speed-quiz-team h2 { margin: 0 0 8px; }
+.speed-quiz-team p { margin: 0; font-weight: 800; }
+
+.speed-quiz-stage {
+  min-height: 420px;
+  padding: 36px 24px;
+  text-align: center;
+}
+
+.speed-quiz-stage h2 {
+  margin: 16px 0 8px;
+  font-size: clamp(26px, 5vw, 44px);
+}
+
+.speed-quiz-stage > button,
+.speed-quiz-actions button {
+  min-height: 52px;
+  padding: 12px 22px;
+  border: 2px solid var(--color-ink);
+  border-radius: 14px;
+  background: var(--color-primary);
+  box-shadow: 0 4px 0 var(--color-ink);
+  font-weight: 900;
+}
+
+.speed-quiz-timer {
+  display: grid;
+  place-items: center;
+  width: 100px;
+  height: 100px;
+  margin: 24px auto;
+  border: 7px solid var(--color-ink);
+  border-radius: 50%;
+  background: #fff7c7;
+  font-size: 46px;
+  font-weight: 1000;
+}
+
+.speed-quiz-timer-urgent {
+  color: #b32135;
+  background: #ffe0e4;
+}
+
+.speed-quiz-prompt {
+  max-width: 640px;
+  margin: 18px auto;
+  padding: 28px;
+  border: 3px dashed var(--color-ink);
+  border-radius: 20px;
+  background: #fff9df;
+  font-size: clamp(38px, 9vw, 76px);
+  font-weight: 1000;
+  letter-spacing: -2px;
+}
+
+.speed-quiz-hidden-prompt {
+  margin: 42px 0;
+  font-size: clamp(28px, 6vw, 50px);
+  font-weight: 1000;
+}
+
+.speed-quiz-hidden-prompt small { font-size: 16px; }
+.speed-quiz-actions { display: flex; justify-content: center; gap: 12px; margin-top: 22px; }
+.speed-quiz-chat { padding: 24px; }
+.speed-quiz-finished { padding: 48px 24px; text-align: center; }
+.speed-quiz-finished .speed-quiz-scoreboard { justify-content: center; margin: 30px 0; }
+
+@media (max-width: 680px) {
+  .speed-quiz-header { align-items: flex-start; flex-direction: column; }
+  .speed-quiz-team-grid { grid-template-columns: 1fr; }
+  .speed-quiz-stage { min-height: 360px; }
+}
+
 @media (max-width: 1240px) {
   .yacht-layout {
     grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);

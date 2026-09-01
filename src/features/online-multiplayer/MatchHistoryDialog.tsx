@@ -21,6 +21,7 @@ interface MatchHistoryDialogProps {
 const GAME_LABELS: Record<OnlineGameId, string> = {
   'yacht-dice': 'Yacht Dice',
   'rock-paper-scissors': '가위바위보',
+  'speed-quiz': '스피드 퀴즈',
 }
 
 const RESULT_LABELS = {

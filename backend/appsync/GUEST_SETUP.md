@@ -58,6 +58,7 @@ ap-northeast-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Query/fields/room",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Query/fields/listPublicRooms",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Query/fields/listChatMessages",
+        "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Query/fields/speedQuizPrompt",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/createRoom",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/joinRoom",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/leaveRoom",
@@ -71,6 +72,8 @@ ap-northeast-2:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/returnToWaitingRoom",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/submitRpsHand",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/advanceRpsRound",
+        "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/startSpeedQuizTurn",
+        "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/scoreSpeedQuizPrompt",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/heartbeat",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/claimDisconnectWin",
         "arn:aws:appsync:ap-northeast-2:621641242785:apis/alnarmw6fjdf3prs2ovivx76au/types/Mutation/fields/sendChatMessage"

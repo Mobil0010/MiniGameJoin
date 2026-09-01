@@ -44,8 +44,22 @@ const DEFAULT_CHAT_LIMIT = 50
 const DEFAULT_HISTORY_LIMIT = 20
 const MAX_QUERY_LIMIT = 50
 const ONLINE_WINDOW_SECONDS = 75
-const MAX_ROOM_PARTICIPANTS = 6
+const MAX_ROOM_PARTICIPANTS = 10
 const PUBLIC_ROOMS_INDEX = 'publicGameId-createdAt-index'
+const SPEED_QUIZ_TURN_SECONDS = 60
+const SPEED_QUIZ_TOTAL_TURNS = 6
+const SPEED_QUIZ_MAX_PASSES = 3
+const SPEED_QUIZ_WORDS = [
+  '피자', '기린', '우산', '선풍기', '축구', '소방관', '도서관', '놀이공원',
+  '김치찌개', '스마트폰', '지하철', '무지개', '팝콘', '수영장', '택배',
+  '아이스크림', '고양이', '편의점', '비행기', '생일케이크', '마술사',
+  '세탁기', '등산', '해바라기', '경찰관', '라면', '노래방', '횡단보도',
+  '눈사람', '사진기', '치과', '야구', '달팽이', '학교', '전자레인지',
+  '딸기', '캥거루', '엘리베이터', '영화관', '구급차', '피아노', '불꽃놀이',
+  '짜장면', '공룡', '컴퓨터', '동물원', '버스', '햄버거', '로봇', '해수욕장',
+  '자전거', '문어', '백화점', '겨울잠', '초콜릿', '우주선', '요리사',
+  '신호등', '바이올린', '치킨', '낙타', '병원', '보물찾기', '스키',
+]
 
 for (const [name, value] of Object.entries({
   USERS_TABLE,
@@ -82,7 +96,7 @@ function normalizeRoomCode(value) {
 
 function normalizeGameId(value) {
   const gameId = String(value ?? '').trim()
-  if (!['yacht-dice', 'rock-paper-scissors'].includes(gameId)) {
+  if (!['yacht-dice', 'rock-paper-scissors', 'speed-quiz'].includes(gameId)) {
     throw new Error('지원하지 않는 게임 전적입니다.')
   }
   return gameId
@@ -260,6 +274,25 @@ function createRoomCode() {
   return Array.from({ length: 6 }, () => {
     return ROOM_CODE_CHARACTERS[randomInt(0, ROOM_CODE_CHARACTERS.length)]
   }).join('')
+}
+
+function getSpeedQuizTurnInfo(room, turn = room.speedQuizTurn ?? 1) {
+  const team = turn % 2 === 1 ? 'A' : 'B'
+  const teamPlayers = getGamePlayers(room).filter(
+    (player) => player.speedQuizTeam === team,
+  )
+  const teamTurnIndex = Math.floor((turn - 1) / 2)
+  return {
+    team,
+    describerId: teamPlayers[teamTurnIndex % teamPlayers.length]?.userId,
+  }
+}
+
+function pickSpeedQuizWord(room) {
+  const usedWords = room._speedQuizUsedWords ?? []
+  const availableWords = SPEED_QUIZ_WORDS.filter((word) => !usedWords.includes(word))
+  const pool = availableWords.length > 0 ? availableWords : SPEED_QUIZ_WORDS
+  return pool[randomInt(0, pool.length)]
 }
 
 function toProfileResponse(profile) {
@@ -1193,7 +1226,7 @@ async function createRoom(event) {
   }
 
   const gameId = String(event.arguments.gameId ?? 'yacht-dice')
-  if (!['yacht-dice', 'rock-paper-scissors'].includes(gameId)) {
+  if (!['yacht-dice', 'rock-paper-scissors', 'speed-quiz'].includes(gameId)) {
     throw new Error('지원하지 않는 게임입니다.')
   }
   const rpsSettings = gameId === 'rock-paper-scissors'
@@ -1212,7 +1245,10 @@ async function createRoom(event) {
       isPublic,
       roomName,
       publicGameId: isPublic ? gameId : undefined,
-      maxPlayers: gameId === 'rock-paper-scissors' ? rpsSettings.maxPlayers : 4,
+      maxPlayers:
+        gameId === 'rock-paper-scissors'
+          ? rpsSettings.maxPlayers
+          : gameId === 'speed-quiz' ? 10 : 4,
       status: 'waiting',
       players: [
         {
@@ -1224,6 +1260,7 @@ async function createRoom(event) {
           slot: 1,
           isPlaying: true,
           scores: [],
+          speedQuizTeam: gameId === 'speed-quiz' ? 'A' : undefined,
         },
       ],
       activePlayerId: null,
@@ -1467,7 +1504,7 @@ async function joinRoom(event) {
 
   const epoch = nowEpochSeconds()
   const selectedPlayers = getGamePlayers(room)
-  const joinsAsPlayer = room.gameId === 'rock-paper-scissors'
+  const joinsAsPlayer = ['rock-paper-scissors', 'speed-quiz'].includes(room.gameId)
     ? room.status !== 'playing'
     : room.status !== 'playing' && selectedPlayers.length < 2
   const occupiedSlots = new Set(
@@ -1475,7 +1512,12 @@ async function joinRoom(event) {
   )
   const assignedSlot = joinsAsPlayer
     ? Array.from(
-        { length: room.gameId === 'rock-paper-scissors' ? 6 : 2 },
+        {
+          length:
+            room.gameId === 'rock-paper-scissors'
+              ? 6
+              : room.gameId === 'speed-quiz' ? 10 : 2,
+        },
         (_, index) => index + 1,
       ).find((slot) => !occupiedSlots.has(slot)) ?? selectedPlayers.length + 1
     : null
@@ -1493,6 +1535,10 @@ async function joinRoom(event) {
         slot: assignedSlot,
         isPlaying: joinsAsPlayer,
         scores: [],
+        speedQuizTeam:
+          room.gameId === 'speed-quiz'
+            ? selectedPlayers.length % 2 === 0 ? 'A' : 'B'
+            : undefined,
       },
     ],
     lastSeenAt: {
@@ -1569,9 +1615,13 @@ async function setReady(event) {
       : player,
   )
   const gamePlayers = getGamePlayers({ ...room, players })
+  const minimumPlayers = room.gameId === 'speed-quiz' ? 4 : 2
+  const hasValidPlayerCount = room.gameId === 'speed-quiz'
+    ? gamePlayers.length >= 4 && gamePlayers.length <= 10
+    : room.gameId === 'rock-paper-scissors' || gamePlayers.length === 2
   const isReady =
-    gamePlayers.length >= 2 &&
-    (room.gameId === 'rock-paper-scissors' || gamePlayers.length === 2) &&
+    gamePlayers.length >= minimumPlayers &&
+    hasValidPlayerCount &&
     gamePlayers.every((player) => player.isReady)
   const nextRoom = {
     ...room,
@@ -1744,6 +1794,47 @@ async function startGame(event) {
   }
 
   const gamePlayers = getGamePlayers(room)
+  if (room.gameId === 'speed-quiz') {
+    if (
+      gamePlayers.length < 4 ||
+      gamePlayers.length > 10 ||
+      !gamePlayers.every((candidate) => candidate.isReady)
+    ) {
+      throw new Error('4~10명의 모든 플레이어가 준비해야 게임을 시작할 수 있습니다.')
+    }
+    const players = room.players.map((candidate, index) => ({
+      ...candidate,
+      isPlaying: true,
+      slot: index + 1,
+      speedQuizTeam: index % 2 === 0 ? 'A' : 'B',
+    }))
+    const baseRoom = { ...room, players, speedQuizTurn: 1 }
+    const turnInfo = getSpeedQuizTurnInfo(baseRoom, 1)
+    const epoch = nowEpochSeconds()
+    return putVersionedRoom({
+      ...baseRoom,
+      status: 'playing',
+      speedQuizPhase: 'betweenTurns',
+      speedQuizTotalTurns: SPEED_QUIZ_TOTAL_TURNS,
+      speedQuizActiveTeam: turnInfo.team,
+      speedQuizDescriberId: turnInfo.describerId,
+      speedQuizTeamAScore: 0,
+      speedQuizTeamBScore: 0,
+      speedQuizPassCount: 0,
+      speedQuizPromptKey: 0,
+      speedQuizTurnDeadline: undefined,
+      speedQuizWinnerTeam: undefined,
+      _speedQuizWord: undefined,
+      _speedQuizUsedWords: [],
+      lastSeenAt: Object.fromEntries(
+        gamePlayers.map((candidate) => [candidate.userId, epoch]),
+      ),
+      version: room.version + 1,
+      updatedAt: nowIso(),
+      expiresAt: epoch + ROOM_TTL_SECONDS,
+    }, room.version)
+  }
+
   if (room.gameId === 'rock-paper-scissors') {
     if (
       gamePlayers.length < 2 ||
@@ -1810,7 +1901,9 @@ async function returnToWaitingRoom(event) {
   const players = room.players.map((player) => ({
     ...player,
     isPlaying:
-      room.gameId === 'rock-paper-scissors' ? true : player.isPlaying,
+      ['rock-paper-scissors', 'speed-quiz'].includes(room.gameId)
+        ? true
+        : player.isPlaying,
     isReady: player.isHost === true,
     scores: [],
   }))
@@ -1838,6 +1931,19 @@ async function returnToWaitingRoom(event) {
     _rpsPendingIds: [],
     _rpsAdvancerIds: [],
     _rpsMatchWinnerId: undefined,
+    speedQuizPhase: undefined,
+    speedQuizTurn: undefined,
+    speedQuizTotalTurns: undefined,
+    speedQuizActiveTeam: undefined,
+    speedQuizDescriberId: undefined,
+    speedQuizTeamAScore: undefined,
+    speedQuizTeamBScore: undefined,
+    speedQuizPassCount: undefined,
+    speedQuizPromptKey: undefined,
+    speedQuizTurnDeadline: undefined,
+    speedQuizWinnerTeam: undefined,
+    _speedQuizWord: undefined,
+    _speedQuizUsedWords: [],
     _rpsGameWinnerId: undefined,
     lastSeenAt: Object.fromEntries(
       players.map((player) => [player.userId, epoch]),
@@ -1848,6 +1954,133 @@ async function returnToWaitingRoom(event) {
   }
 
   return putVersionedRoom(nextRoom, room.version)
+}
+
+async function speedQuizPrompt(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  if (
+    room.gameId !== 'speed-quiz' ||
+    room.status !== 'playing' ||
+    room.speedQuizPhase !== 'turn' ||
+    room.speedQuizDescriberId !== userId ||
+    !room._speedQuizWord
+  ) {
+    throw new Error('현재 설명자만 제시어를 볼 수 있습니다.')
+  }
+  return room._speedQuizWord
+}
+
+async function startSpeedQuizTurn(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  if (
+    room.gameId !== 'speed-quiz' ||
+    room.status !== 'playing' ||
+    room.speedQuizPhase !== 'betweenTurns'
+  ) {
+    throw new Error('지금은 스피드 퀴즈 차례를 시작할 수 없습니다.')
+  }
+  if (room.speedQuizDescriberId !== userId) {
+    throw new Error('이번 차례의 설명자만 시작할 수 있습니다.')
+  }
+  const word = pickSpeedQuizWord(room)
+  return putVersionedRoom({
+    ...room,
+    speedQuizPhase: 'turn',
+    speedQuizPassCount: 0,
+    speedQuizPromptKey: (room.speedQuizPromptKey ?? 0) + 1,
+    speedQuizTurnDeadline: new Date(
+      Date.now() + SPEED_QUIZ_TURN_SECONDS * 1000,
+    ).toISOString(),
+    _speedQuizWord: word,
+    _speedQuizUsedWords: [...(room._speedQuizUsedWords ?? []), word],
+    version: room.version + 1,
+    updatedAt: nowIso(),
+  }, room.version)
+}
+
+async function scoreSpeedQuizPrompt(event) {
+  const { room, userId } = await readParticipantRoom(event)
+  requireExpectedVersion(room, event.arguments.expectedVersion)
+  const result = String(event.arguments.result ?? '')
+  if (
+    room.gameId !== 'speed-quiz' ||
+    room.status !== 'playing' ||
+    room.speedQuizPhase !== 'turn'
+  ) {
+    throw new Error('진행 중인 스피드 퀴즈 차례가 없습니다.')
+  }
+  const deadlinePassed = Date.now() >= new Date(room.speedQuizTurnDeadline).getTime()
+  if (result === 'timeout') {
+    if (!deadlinePassed) {
+      throw new Error('제한 시간이 아직 남아 있습니다.')
+    }
+  } else {
+    if (room.speedQuizDescriberId !== userId) {
+      throw new Error('현재 설명자만 정답 또는 패스를 처리할 수 있습니다.')
+    }
+    if (deadlinePassed) {
+      throw new Error('제한 시간이 끝났습니다.')
+    }
+    if (!['correct', 'pass'].includes(result)) {
+      throw new Error('정답 처리 방식이 올바르지 않습니다.')
+    }
+  }
+
+  if (result !== 'timeout') {
+    if (result === 'pass' && (room.speedQuizPassCount ?? 0) >= SPEED_QUIZ_MAX_PASSES) {
+      throw new Error(`패스는 차례당 ${SPEED_QUIZ_MAX_PASSES}회까지만 사용할 수 있습니다.`)
+    }
+    const word = pickSpeedQuizWord(room)
+    const scoreKey = room.speedQuizActiveTeam === 'A'
+      ? 'speedQuizTeamAScore'
+      : 'speedQuizTeamBScore'
+    return putVersionedRoom({
+      ...room,
+      [scoreKey]: (room[scoreKey] ?? 0) + (result === 'correct' ? 1 : 0),
+      speedQuizPassCount:
+        (room.speedQuizPassCount ?? 0) + (result === 'pass' ? 1 : 0),
+      speedQuizPromptKey: (room.speedQuizPromptKey ?? 0) + 1,
+      _speedQuizWord: word,
+      _speedQuizUsedWords: [...(room._speedQuizUsedWords ?? []), word],
+      version: room.version + 1,
+      updatedAt: nowIso(),
+    }, room.version)
+  }
+
+  const currentTurn = room.speedQuizTurn ?? 1
+  if (currentTurn >= (room.speedQuizTotalTurns ?? SPEED_QUIZ_TOTAL_TURNS)) {
+    const teamAScore = room.speedQuizTeamAScore ?? 0
+    const teamBScore = room.speedQuizTeamBScore ?? 0
+    return putVersionedRoom({
+      ...room,
+      status: 'finished',
+      finishReason: 'completed',
+      speedQuizPhase: undefined,
+      speedQuizTurnDeadline: undefined,
+      speedQuizWinnerTeam:
+        teamAScore === teamBScore ? undefined : teamAScore > teamBScore ? 'A' : 'B',
+      _speedQuizWord: undefined,
+      resultRecorded: true,
+      version: room.version + 1,
+      updatedAt: nowIso(),
+    }, room.version)
+  }
+
+  const nextTurn = currentTurn + 1
+  const turnInfo = getSpeedQuizTurnInfo(room, nextTurn)
+  return putVersionedRoom({
+    ...room,
+    speedQuizPhase: 'betweenTurns',
+    speedQuizTurn: nextTurn,
+    speedQuizActiveTeam: turnInfo.team,
+    speedQuizDescriberId: turnInfo.describerId,
+    speedQuizPassCount: 0,
+    speedQuizTurnDeadline: undefined,
+    _speedQuizWord: undefined,
+    version: room.version + 1,
+    updatedAt: nowIso(),
+  }, room.version)
 }
 
 async function submitRpsHand(event) {
@@ -2631,6 +2864,7 @@ const handlers = {
   searchMembers,
   myMatchHistory,
   matchDetail,
+  speedQuizPrompt,
   onRoomChanged: authorizeRoomSubscription,
   onChatMessage: authorizeRoomSubscription,
   ensureProfile,
@@ -2649,6 +2883,8 @@ const handlers = {
   returnToWaitingRoom,
   submitRpsHand,
   advanceRpsRound,
+  startSpeedQuizTurn,
+  scoreSpeedQuizPrompt,
   heartbeat,
   claimDisconnectWin,
   sendChatMessage,

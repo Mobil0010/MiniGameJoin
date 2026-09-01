@@ -37,9 +37,12 @@ export interface OnlineRoomPlayer {
   isPlaying: boolean
   slot?: number
   scores?: ScoreCard
+  speedQuizTeam?: SpeedQuizTeam
 }
 
-export type OnlineGameId = 'yacht-dice' | 'rock-paper-scissors'
+export type OnlineGameId = 'yacht-dice' | 'rock-paper-scissors' | 'speed-quiz'
+export type SpeedQuizTeam = 'A' | 'B'
+export type SpeedQuizPhase = 'between-turns' | 'turn'
 export type RpsMode = 'tournament' | 'all-play'
 export type RpsHand = 'rock' | 'paper' | 'scissors'
 export type RpsPhase = 'selecting' | 'revealing'
@@ -87,6 +90,17 @@ export interface OnlineRoom {
   rpsRoundWinnerIds?: string[]
   rpsRoundDeadline?: string | null
   rpsRevealEndsAt?: string | null
+  speedQuizPhase?: SpeedQuizPhase | null
+  speedQuizTurn?: number
+  speedQuizTotalTurns?: number
+  speedQuizActiveTeam?: SpeedQuizTeam | null
+  speedQuizDescriberId?: string | null
+  speedQuizTeamAScore?: number
+  speedQuizTeamBScore?: number
+  speedQuizPassCount?: number
+  speedQuizPromptKey?: number
+  speedQuizTurnDeadline?: string | null
+  speedQuizWinnerTeam?: SpeedQuizTeam | null
 }
 
 export interface PublicOnlineRoom {

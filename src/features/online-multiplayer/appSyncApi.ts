@@ -67,6 +67,7 @@ interface RoomDto {
       category: ScoreCategory
       score: number
     }>
+    speedQuizTeam?: 'A' | 'B' | null
   }>
   activePlayerId?: string | null
   dice: Array<{
@@ -100,6 +101,17 @@ interface RoomDto {
   rpsRoundWinnerIds: string[]
   rpsRoundDeadline?: string | null
   rpsRevealEndsAt?: string | null
+  speedQuizPhase?: 'betweenTurns' | 'turn' | null
+  speedQuizTurn?: number | null
+  speedQuizTotalTurns?: number | null
+  speedQuizActiveTeam?: 'A' | 'B' | null
+  speedQuizDescriberId?: string | null
+  speedQuizTeamAScore?: number | null
+  speedQuizTeamBScore?: number | null
+  speedQuizPassCount?: number | null
+  speedQuizPromptKey?: number | null
+  speedQuizTurnDeadline?: string | null
+  speedQuizWinnerTeam?: 'A' | 'B' | null
   createdAt: string
   updatedAt: string
   expiresAt: number
@@ -198,6 +210,7 @@ const ROOM_FIELDS = `
       category
       score
     }
+    speedQuizTeam
   }
   maxPlayers
   activePlayerId
@@ -234,6 +247,17 @@ const ROOM_FIELDS = `
   rpsRoundWinnerIds
   rpsRoundDeadline
   rpsRevealEndsAt
+  speedQuizPhase
+  speedQuizTurn
+  speedQuizTotalTurns
+  speedQuizActiveTeam
+  speedQuizDescriberId
+  speedQuizTeamAScore
+  speedQuizTeamBScore
+  speedQuizPassCount
+  speedQuizPromptKey
+  speedQuizTurnDeadline
+  speedQuizWinnerTeam
   createdAt
   updatedAt
   expiresAt
@@ -533,6 +557,7 @@ function mapRoom(room: RoomDto): OnlineRoom {
       player.isPlaying ?? (player.slot === 1 || player.slot === 2),
     slot: player.slot ?? undefined,
     scores: mapScoreEntries(player.scores),
+    speedQuizTeam: player.speedQuizTeam ?? undefined,
   }))
   const dice: Die[] = room.dice.map((die) => ({
     id: die.id,
@@ -569,6 +594,18 @@ function mapRoom(room: RoomDto): OnlineRoom {
     rpsRoundWinnerIds: room.rpsRoundWinnerIds ?? [],
     rpsRoundDeadline: room.rpsRoundDeadline ?? null,
     rpsRevealEndsAt: room.rpsRevealEndsAt ?? null,
+    speedQuizPhase:
+      room.speedQuizPhase === 'betweenTurns' ? 'between-turns' : room.speedQuizPhase,
+    speedQuizTurn: room.speedQuizTurn ?? undefined,
+    speedQuizTotalTurns: room.speedQuizTotalTurns ?? undefined,
+    speedQuizActiveTeam: room.speedQuizActiveTeam ?? null,
+    speedQuizDescriberId: room.speedQuizDescriberId ?? null,
+    speedQuizTeamAScore: room.speedQuizTeamAScore ?? 0,
+    speedQuizTeamBScore: room.speedQuizTeamBScore ?? 0,
+    speedQuizPassCount: room.speedQuizPassCount ?? 0,
+    speedQuizPromptKey: room.speedQuizPromptKey ?? 0,
+    speedQuizTurnDeadline: room.speedQuizTurnDeadline ?? null,
+    speedQuizWinnerTeam: room.speedQuizWinnerTeam ?? null,
   }
 }
 
@@ -843,6 +880,55 @@ export async function startOnlineGame(
   )
 
   return mapRoom(data.startGame)
+}
+
+export async function getOnlineSpeedQuizPrompt(
+  roomCode: string,
+): Promise<string> {
+  const data = await graphqlRequest<{ speedQuizPrompt: string }>(
+    `query SpeedQuizPrompt($roomCode: ID!) {
+      speedQuizPrompt(roomCode: $roomCode)
+    }`,
+    { roomCode },
+  )
+  return data.speedQuizPrompt
+}
+
+export async function startOnlineSpeedQuizTurn(
+  room: OnlineRoom,
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ startSpeedQuizTurn: RoomDto }>(
+    `mutation StartSpeedQuizTurn($roomCode: ID!, $expectedVersion: Int!) {
+      startSpeedQuizTurn(roomCode: $roomCode, expectedVersion: $expectedVersion) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    { roomCode: room.code, expectedVersion: room.version },
+  )
+  return mapRoom(data.startSpeedQuizTurn)
+}
+
+export async function scoreOnlineSpeedQuizPrompt(
+  room: OnlineRoom,
+  result: 'correct' | 'pass' | 'timeout',
+): Promise<OnlineRoom> {
+  const data = await graphqlRequest<{ scoreSpeedQuizPrompt: RoomDto }>(
+    `mutation ScoreSpeedQuizPrompt(
+      $roomCode: ID!
+      $result: SpeedQuizPromptResult!
+      $expectedVersion: Int!
+    ) {
+      scoreSpeedQuizPrompt(
+        roomCode: $roomCode
+        result: $result
+        expectedVersion: $expectedVersion
+      ) {
+        ${ROOM_FIELDS}
+      }
+    }`,
+    { roomCode: room.code, result, expectedVersion: room.version },
+  )
+  return mapRoom(data.scoreSpeedQuizPrompt)
 }
 
 export async function submitOnlineRpsHand(
